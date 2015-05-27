@@ -1,0 +1,314 @@
+<?php
+
+/**
+ * @file
+ * Defines the Text or Entity field type.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function text_or_entity_menu() {
+  $items = array();
+
+  $items['text_or_entity/autocomplete/%/%/%'] = array(
+    'title' => 'Text or Entity Autocomplete',
+    'page callback' => 'text_or_entity_autocomplete_callback',
+    'page arguments' => array(2, 3, 4),
+    'access callback' => 'text_or_entity_autocomplete_access_callback',
+    'access arguments' => array(2, 3, 4),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_field_info().
+ *
+ * Field settings:
+ *   - max_length: maximum length for varchar text value.
+ *   - target_type: specific type of target entity.
+ */
+function text_or_entity_field_info() {
+  return array(
+    'text_or_entity' => array(
+      'label' => t('Text or Entity'),
+      'description' => t('This field stores varchar text and optional matching entity reference.'),
+      'settings' => array(
+        'max_length' => 255,
+        'target_type' => 'node',
+        'target_bundles' => array(),
+      ),
+      'instance_settings' => array(
+        'text_processing' => FALSE,
+      ),
+      'default_widget' => 'text_or_entity_autocomplete',
+      'default_formatter' => 'text_or_entity_link',
+
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_is_empty().
+ */
+function text_or_entity_field_is_empty($item, $field) {
+   return !isset($item['value']) || $item['value'] === '';
+}
+
+/**
+ * Implements hook_field_validate().
+ */
+function text_or_entity_field_validate($entity_type, $entity, $field, $instance, $langcode, $items, &$errors) {
+  // TODO: Validate target_id for all items.
+}
+
+/**
+ * Implements hook_field_settings_form().
+ */
+function text_or_entity_field_settings_form($field, $instance, $has_data) {
+  $settings = $field['settings'];
+  $form = array();
+
+  $form['max_length'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Maximum length'),
+    '#default_value' => $settings['max_length'],
+    '#required' => TRUE,
+    '#description' => t('The maximum length of the text value in characters.'),
+    '#element_validate' => array('element_validate_integer_positive'),
+    '#disabled' => $has_data,
+  );
+  // TODO: Dynamic entity type / bundles form
+  $form['target_type'] = array(
+    '#type' => 'select',
+    '#title' => t('Target type'),
+    '#options' => _text_or_entity_get_entity_type_options(),
+    '#default_value' => $settings['target_type'],
+    '#description' => t('The entity type that can be used for autocomplete.'),
+    '#disabled' => $has_data,
+  );
+
+  return $form;
+}
+
+/**
+ * Implements hook_field_instance_settings_form().
+ */
+function text_or_entity_field_instance_settings_form($field, $instance) {
+  $form = array();
+
+  $form['text_processing'] = array(
+    '#type' => 'hidden',
+    '#title' => t('Text processing'),
+    '#default_value' => FALSE,
+  );
+
+  return $form;
+}
+
+/**
+ * Helper function to get available entity types options.
+ *
+ * @return array
+ *   The available entity types options.
+ */
+function _text_or_entity_get_entity_type_options() {
+  $entity_type_options = array();
+  foreach (entity_get_info() as $entity_type => $entity_info) {
+    // Don't use text_or_entity_*_query functions for now,
+    // maybe we'll use entityreference handlers instead.
+    //if (function_exists('text_or_entity_' . $entity_type . '_query')) {
+      $entity_type_options[$entity_type] = $entity_info['label'];
+    //}
+  }
+  return $entity_type_options;
+}
+
+/**
+ * Helper function to get bundles options from entity type.
+ *
+ * @param string $entity_type
+ *   Entity type for which to retrieve bundles options.
+ *
+ * @return array
+ *   The bundles options for that entity type.
+ */
+function _text_or_entity_get_bundles_options($entity_type = '') {
+  if ($bundles_info = field_info_bundles($entity_type)) {
+    $bundles_options = array();
+    foreach ($bundles_info as $bundle_name => $bundle) {
+      $bundles_options[$bundle_name] = $bundle['label'];
+    }
+    return $bundles_options;
+  }
+  return array();
+}
+
+/**
+ * Implements hook_field_widget_info().
+ */
+function text_or_entity_field_widget_info() {
+  return array(
+    'text_or_entity_autocomplete' => array(
+      'label' => t('Autocomplete'),
+      'description' => t('An autocomplete text field.'),
+      'field types' => array('text_or_entity'),
+      'settings' => array(
+        'size' => 60,
+        'match_operator' => 'STARTS_WITH',
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_widget_form().
+ */
+function text_or_entity_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
+  if ($instance['widget']['type'] == 'text_or_entity_autocomplete') {
+    // Reuse text_textfield widget form then add autocomplete path
+    $instance['widget']['type'] = 'text_textfield';
+    $element = text_field_widget_form($form, $form_state, $field, $instance, $langcode, $items, $delta, $element);
+    $element['value']['#autocomplete_path'] = 'text_or_entity/autocomplete/' . $element['#field_name'] . '/' . $element['#entity_type'] . '/' . $element['#bundle'];
+  }
+  return $element;
+}
+
+/**
+ * Implements hook_field_widget_settings_form().
+ */
+function text_or_entity_field_widget_settings_form($field, $instance) {
+  $form = array();
+  $widget = $instance['widget'];
+  $settings = $widget['settings'];
+
+  if ($widget['type'] == 'text_or_entity_autocomplete') {
+    // Reuse text_textfield widget settings form
+    $instance['widget']['type'] = 'text_textfield';
+    $form = text_field_widget_settings_form($field, $instance);
+    // Text or Entity autocomplete widget settings
+    $form['match_operator'] = array(
+      '#type' => 'select',
+      '#title' => t('Match operator'),
+      '#default_value' => isset($settings['text_or_entity']) ? $settings['text_or_entity']['match_operator'] : 'STARTS_WITH',
+      '#options' => array(
+        'STARTS_WITH' => t('Starts with'),
+        'CONTAINS' => t('Contains'),
+      ),
+      '#description' => t('Select the method used to collect autocomplete suggestions. Note that <em>Contains</em> can cause performance issues on sites with thousands of records.'),
+    );
+  }
+
+  return $form;
+}
+
+/**
+ * Menu Access callback for the Text or Entity autocomplete widget.
+ *
+ * @param $field_name
+ *   The name of the text_or_entity field.
+ * @param $entity_type
+ *   The entity type.
+ * @param $bundle_name
+ *   The bundle name.
+ * @return
+ *   True if user can access this menu item.
+ */
+function text_or_entity_autocomplete_access_callback($field_name, $entity_type, $bundle_name) {
+  $field = field_info_field($field_name);
+  $instance = field_info_instance($entity_type, $field_name, $bundle_name);
+
+  if (!$field || !$instance || $field['type'] != 'text_or_entity' || !field_access('edit', $field, $entity_type)) {
+    return FALSE;
+  }
+  return TRUE;
+}
+
+/**
+ * Menu callback: autocomplete previous text values or the label of an entity.
+ *
+ * @param $field_name
+ *   The name of the entity-reference field.
+ * @param $entity_type
+ *   The entity type.
+ * @param $bundle_name
+ *   The bundle name.
+ * @param $string
+ *   The label of the entity to query by.
+ */
+function text_or_entity_autocomplete_callback($field_name, $entity_type, $bundle_name, $string = '') {
+  // If the request has a '/' in the search text, then the menu system will have
+  // split it into multiple arguments and $string will only be a partial. We want
+  //  to make sure we recover the intended $string.
+  $args = func_get_args();
+  // Shift off the $field_name, $entity_type and $bundle_name args.
+  array_shift($args);
+  array_shift($args);
+  array_shift($args);
+  $string = implode('/', $args);
+
+  $field = field_info_field($field_name);
+  $instance = field_info_instance($entity_type, $field_name, $bundle_name);
+
+  return text_or_entity_autocomplete_callback_get_matches($field, $instance, $entity_type, $string);
+}
+
+/**
+ * Return JSON based on given field, instance and string.
+ *
+ * This function can be used by other modules that wish to pass a mocked
+ * definition of the field on instance.
+ *
+ * @param $field
+ *   The field array defintion.
+ * @param $instance
+ *   The instance array defintion.
+ * @param $entity_type
+ *   The entity type.
+ * @param $string
+ *   The label of the entity to query by.
+ */
+function text_or_entity_autocomplete_callback_get_matches($field, $instance, $entity_type, $string = '') {
+  $matches = array();
+
+  // TODO: Find entity matches for text value and entity target_id
+
+  // Merge and sanitize output.
+  foreach ($matches as $key => &$value) {
+    // Add a class wrapper for a few required CSS overrides.
+    // We use $key since $value might hold the link to an entity.
+    $value = '<div class="reference-autocomplete">' . check_plain($key) . '</div>';
+  }
+  asort($matches, SORT_LOCALE_STRING);
+
+  drupal_json_output($matches);
+}
+
+/**
+ * Implements hook_field_formatter_info().
+ */
+function text_or_entity_field_formatter_info() {
+  return array(
+    'text_or_entity_link' => array(
+      'label' => t('Text or Entity link'),
+      'field types' => array('text_or_entity'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_formatter_view().
+ */
+function text_or_entity_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
+  $elements = array();
+
+  if ($display['type'] == 'text_or_entity_link') {
+    foreach ($items as $delta => $item) {
+      // TODO: Display items with target_id as links
+      $elements[$delta] = array('#markup' => $item['value']);
+    }
+  }
+  return $elements;
+}
