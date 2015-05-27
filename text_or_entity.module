@@ -37,8 +37,10 @@ function text_or_entity_field_info() {
       'description' => t('This field stores varchar text and optional matching entity reference.'),
       'settings' => array(
         'max_length' => 255,
-        'target_type' => 'node',
-        'target_bundles' => array(),
+        'entity_selection' => array(
+          'target_type' => 'node',
+          'target_bundles' => array(),
+        ),
       ),
       'instance_settings' => array(
         'text_processing' => FALSE,
@@ -61,36 +63,92 @@ function text_or_entity_field_is_empty($item, $field) {
  * Implements hook_field_validate().
  */
 function text_or_entity_field_validate($entity_type, $entity, $field, $instance, $langcode, $items, &$errors) {
-  // TODO: Validate target_id for all items.
+  foreach ($items as $delta => $item) {
+    // TODO: Make sure target_id references entity with correct label.
+  }
 }
 
 /**
  * Implements hook_field_settings_form().
  */
 function text_or_entity_field_settings_form($field, $instance, $has_data) {
-  $settings = $field['settings'];
-  $form = array();
+  $form = array(
+    '#type' => 'container',
+    '#prefix' => '<div id="text-or-entity-settings">',
+    '#suffix' => '</div>',
+    '#process' => array('_text_or_entity_field_settings_process'),
+    '#element_validate' => array('_text_or_entity_field_settings_validate'),
+    '#field' => $field,
+    '#instance' => $instance,
+    '#has_data' => $has_data,
+  );
+
+  return $form;
+}
+
+/**
+ * Process callback to build the Text or Entity field settings form.
+ */
+function _text_or_entity_field_settings_process($form, $form_state) {
+  $field = isset($form_state['text_or_entity']['field']) ? $form_state['text_or_entity']['field'] : $form['#field'];
+  $has_data = $form['#has_data'];
 
   $form['max_length'] = array(
     '#type' => 'textfield',
     '#title' => t('Maximum length'),
-    '#default_value' => $settings['max_length'],
+    '#default_value' => $field['settings']['max_length'],
     '#required' => TRUE,
     '#description' => t('The maximum length of the text value in characters.'),
     '#element_validate' => array('element_validate_integer_positive'),
     '#disabled' => $has_data,
   );
-  // TODO: Dynamic entity type / bundles form
-  $form['target_type'] = array(
+
+  $form['entity_selection'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Entity selection'),
+  );
+  $form['entity_selection']['target_type'] = array(
     '#type' => 'select',
     '#title' => t('Target type'),
     '#options' => _text_or_entity_get_entity_type_options(),
-    '#default_value' => $settings['target_type'],
-    '#description' => t('The entity type that can be used for autocomplete.'),
+    '#default_value' => $field['settings']['entity_selection']['target_type'],
+    '#description' => t('The entity type that can be referenced through this field.'),
+    '#disabled' => $has_data,
+    '#size' => 1,
+    '#ajax' => array(
+      'callback' => '_text_or_entity_field_settings_ajax_callback',
+      'wrapper' => 'text-or-entity-settings',
+    ),
+  );
+  $form['entity_selection']['target_bundles'] = array(
+    '#type' => 'checkboxes',
+    '#title' => t('Target bundles'),
+    '#options' => _text_or_entity_get_bundles_options($field['settings']['entity_selection']['target_type']),
+    '#default_value' => $field['settings']['entity_selection']['target_bundles'],
+    '#description' => t('The bundles of the entity type that can be referenced. Optional, leave empty for all bundles.'),
     '#disabled' => $has_data,
   );
 
   return $form;
+}
+
+/**
+ * AJAX callback to rebuild the target_bundles settings.
+ */
+function _text_or_entity_field_settings_ajax_callback($form, $form_state) {
+  return $form['field']['settings'];
+}
+
+/**
+ * Validate field settings from the form state values.
+ */
+function _text_or_entity_field_settings_validate($form, &$form_state) {
+  // Store the new values in the form state.
+  $field = $form['#field'];
+  if (isset($form_state['values']['field'])) {
+    $field['settings'] = $form_state['values']['field']['settings'];
+  }
+  $form_state['text_or_entity']['field'] = $field;
 }
 
 /**
@@ -172,6 +230,7 @@ function text_or_entity_field_widget_form(&$form, &$form_state, $field, $instanc
     $instance['widget']['type'] = 'text_textfield';
     $element = text_field_widget_form($form, $form_state, $field, $instance, $langcode, $items, $delta, $element);
     $element['value']['#autocomplete_path'] = 'text_or_entity/autocomplete/' . $element['#field_name'] . '/' . $element['#entity_type'] . '/' . $element['#bundle'];
+    // TODO: Add AJAX callback to fetch / preview target_id in the widget form (ex: 'user/10')
   }
   return $element;
 }
@@ -252,7 +311,7 @@ function text_or_entity_autocomplete_callback($field_name, $entity_type, $bundle
   $field = field_info_field($field_name);
   $instance = field_info_instance($entity_type, $field_name, $bundle_name);
 
-  return text_or_entity_autocomplete_callback_get_matches($field, $instance, $entity_type, $string);
+  text_or_entity_autocomplete_callback_get_matches($field, $instance, $entity_type, $string);
 }
 
 /**
@@ -273,7 +332,7 @@ function text_or_entity_autocomplete_callback($field_name, $entity_type, $bundle
 function text_or_entity_autocomplete_callback_get_matches($field, $instance, $entity_type, $string = '') {
   $matches = array();
 
-  // TODO: Find entity matches for text value and entity target_id
+  // TODO: Find entity matches for text value and entity target_id.
 
   // Merge and sanitize output.
   foreach ($matches as $key => &$value) {
@@ -306,9 +365,19 @@ function text_or_entity_field_formatter_view($entity_type, $entity, $field, $ins
 
   if ($display['type'] == 'text_or_entity_link') {
     foreach ($items as $delta => $item) {
-      // TODO: Display items with target_id as links
+      // TODO: Display items with target_id != NULL as links.
       $elements[$delta] = array('#markup' => $item['value']);
     }
   }
   return $elements;
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function text_or_entity_views_api() {
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'text_or_entity') . '/views',
+  );
 }
