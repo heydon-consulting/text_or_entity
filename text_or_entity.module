@@ -283,7 +283,6 @@ function text_or_entity_field_widget_form(&$form, &$form_state, $field, $instanc
     );
     $element['target_id'] = array(
       '#type' => 'hidden',
-      '#value' => 12345,
       '#default_value' => NULL,
     );
   }
@@ -382,7 +381,7 @@ function _text_or_entity_autocomplete_validate($element, &$form_state, $form) {
   // TODO: Determine target_id from autocompleted value.
 
   // Change submitted form value for target_id.
-  $parents = $element['#parents'];
+  $parents = $element['#array_parents'];
   array_pop($parents);
   $parent_element = drupal_array_get_nested_value($form, $parents);
   form_set_value($parent_element['target_id'], $target_id, $form_state);
