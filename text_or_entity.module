@@ -29,6 +29,7 @@ function text_or_entity_menu() {
  * Field settings:
  *   - max_length: maximum length for varchar text value.
  *   - target_type: specific type of target entity.
+ *   - target_bundles: specific bundle(s) of target entity.
  */
 function text_or_entity_field_info() {
   return array(
@@ -56,15 +57,28 @@ function text_or_entity_field_info() {
  * Implements hook_field_is_empty().
  */
 function text_or_entity_field_is_empty($item, $field) {
-   return !isset($item['value']) || $item['value'] === '';
+  return !isset($item['value']) || $item['value'] === '';
 }
 
 /**
  * Implements hook_field_validate().
  */
 function text_or_entity_field_validate($entity_type, $entity, $field, $instance, $langcode, $items, &$errors) {
+  $target_type = $field['settings']['entity_selection']['target_type'];
+  $target_bundles = $field['settings']['entity_selection']['target_bundles'];
+
   foreach ($items as $delta => $item) {
-    // TODO: Make sure target_id references entity with correct label.
+    if (!text_or_entity_field_is_empty($item, $field)) {
+      // TODO: Make sure $item['target_id'] references a valid entity with correct label.
+    }
+    else if (isset($item['target_id']) && $item['target_id'] !== NULL) {
+      // Empty value with non-empty target_id.
+      $errors[$field['field_name']][$langcode][$delta][] = array(
+        'error' => 'text_or_entity_empty_label',
+        'message' => t('The referenced entity (@type: @id) has an empty label.',
+          array('@type' => $target_type, '@id' => $item['target_id'])),
+      );
+    }
   }
 }
 
@@ -74,7 +88,7 @@ function text_or_entity_field_validate($entity_type, $entity, $field, $instance,
 function text_or_entity_field_settings_form($field, $instance, $has_data) {
   $form = array(
     '#type' => 'container',
-    '#prefix' => '<div id="text-or-entity-settings">',
+    '#prefix' => '<div id="text-or-entity-field-settings">',
     '#suffix' => '</div>',
     '#process' => array('_text_or_entity_field_settings_process'),
     '#element_validate' => array('_text_or_entity_field_settings_validate'),
@@ -117,7 +131,7 @@ function _text_or_entity_field_settings_process($form, $form_state) {
     '#size' => 1,
     '#ajax' => array(
       'callback' => '_text_or_entity_field_settings_ajax_callback',
-      'wrapper' => 'text-or-entity-settings',
+      'wrapper' => 'text-or-entity-field-settings',
     ),
   );
   $form['entity_selection']['target_bundles'] = array(
@@ -143,27 +157,12 @@ function _text_or_entity_field_settings_ajax_callback($form, $form_state) {
  * Validate field settings from the form state values.
  */
 function _text_or_entity_field_settings_validate($form, &$form_state) {
-  // Store the new values in the form state.
+  // Store the new field settings in the form state.
   $field = $form['#field'];
   if (isset($form_state['values']['field'])) {
     $field['settings'] = $form_state['values']['field']['settings'];
   }
   $form_state['text_or_entity']['field'] = $field;
-}
-
-/**
- * Implements hook_field_instance_settings_form().
- */
-function text_or_entity_field_instance_settings_form($field, $instance) {
-  $form = array();
-
-  $form['text_processing'] = array(
-    '#type' => 'hidden',
-    '#title' => t('Text processing'),
-    '#default_value' => FALSE,
-  );
-
-  return $form;
 }
 
 /**
@@ -174,13 +173,14 @@ function text_or_entity_field_instance_settings_form($field, $instance) {
  */
 function _text_or_entity_get_entity_type_options() {
   $entity_type_options = array();
+
   foreach (entity_get_info() as $entity_type => $entity_info) {
-    // Don't use text_or_entity_*_query functions for now,
-    // maybe we'll use entityreference handlers instead.
+    // Don't use text_or_entity_*_query functions for now.
     //if (function_exists('text_or_entity_' . $entity_type . '_query')) {
-      $entity_type_options[$entity_type] = $entity_info['label'];
+    $entity_type_options[$entity_type] = $entity_info['label'];
     //}
   }
+
   return $entity_type_options;
 }
 
@@ -193,15 +193,33 @@ function _text_or_entity_get_entity_type_options() {
  * @return array
  *   The bundles options for that entity type.
  */
-function _text_or_entity_get_bundles_options($entity_type = '') {
+function _text_or_entity_get_bundles_options($entity_type) {
+  $bundles_options = array();
+
+  if (empty($entity_type)) {
+    return array();
+  }
   if ($bundles_info = field_info_bundles($entity_type)) {
-    $bundles_options = array();
     foreach ($bundles_info as $bundle_name => $bundle) {
       $bundles_options[$bundle_name] = $bundle['label'];
     }
-    return $bundles_options;
   }
-  return array();
+
+  return $bundles_options;
+}
+
+/**
+ * Implements hook_field_instance_settings_form().
+ */
+function text_or_entity_field_instance_settings_form($field, $instance) {
+  $form = array();
+
+  $form['text_processing'] = array(
+    '#type' => 'hidden',
+    '#value' => FALSE,
+  );
+
+  return $form;
 }
 
 /**
@@ -219,20 +237,6 @@ function text_or_entity_field_widget_info() {
       ),
     ),
   );
-}
-
-/**
- * Implements hook_field_widget_form().
- */
-function text_or_entity_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
-  if ($instance['widget']['type'] == 'text_or_entity_autocomplete') {
-    // Reuse text_textfield widget form then add autocomplete path
-    $instance['widget']['type'] = 'text_textfield';
-    $element = text_field_widget_form($form, $form_state, $field, $instance, $langcode, $items, $delta, $element);
-    $element['value']['#autocomplete_path'] = 'text_or_entity/autocomplete/' . $element['#field_name'] . '/' . $element['#entity_type'] . '/' . $element['#bundle'];
-    // TODO: Add AJAX callback to fetch / preview target_id in the widget form (ex: 'user/10')
-  }
-  return $element;
 }
 
 /**
@@ -261,6 +265,30 @@ function text_or_entity_field_widget_settings_form($field, $instance) {
   }
 
   return $form;
+}
+
+/**
+ * Implements hook_field_widget_form().
+ */
+function text_or_entity_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
+  if ($instance['widget']['type'] == 'text_or_entity_autocomplete') {
+    // Reuse text_textfield widget form.
+    $instance['widget']['type'] = 'text_textfield';
+    $element = text_field_widget_form($form, $form_state, $field, $instance, $langcode, $items, $delta, $element);
+    // Add autocomplete path and validation to value field.
+    $element['value'] += array(
+      '#autocomplete_path' => 'text_or_entity/autocomplete/' .
+        $element['#field_name'] . '/' . $element['#entity_type'] . '/' . $element['#bundle'],
+      '#element_validate' => array('_text_or_entity_autocomplete_validate'),
+    );
+    $element['target_id'] = array(
+      '#type' => 'hidden',
+      '#value' => 12345,
+      '#default_value' => NULL,
+    );
+  }
+
+  return $element;
 }
 
 /**
@@ -332,7 +360,7 @@ function text_or_entity_autocomplete_callback($field_name, $entity_type, $bundle
 function text_or_entity_autocomplete_callback_get_matches($field, $instance, $entity_type, $string = '') {
   $matches = array();
 
-  // TODO: Find entity matches for text value and entity target_id.
+  // TODO: Build autocomplete suggestions from previous text values and matching entities.
 
   // Merge and sanitize output.
   foreach ($matches as $key => &$value) {
@@ -343,6 +371,21 @@ function text_or_entity_autocomplete_callback_get_matches($field, $instance, $en
   asort($matches, SORT_LOCALE_STRING);
 
   drupal_json_output($matches);
+}
+
+/**
+ * Validation callback for widget form.
+ */
+function _text_or_entity_autocomplete_validate($element, &$form_state, $form) {
+  $target_id = NULL;
+
+  // TODO: Determine target_id from autocompleted value.
+
+  // Change submitted form value for target_id.
+  $parents = $element['#parents'];
+  array_pop($parents);
+  $parent_element = drupal_array_get_nested_value($form, $parents);
+  form_set_value($parent_element['target_id'], $target_id, $form_state);
 }
 
 /**
