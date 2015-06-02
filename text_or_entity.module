@@ -39,8 +39,8 @@ function text_or_entity_field_info() {
  * Implements hook_field_is_empty().
  */
 function text_or_entity_field_is_empty($item, $field) {
-  $empty_value = !isset($item['value']) || $item['value'] === '';
-  $empty_target_id = !isset($item['target_id']) || $item['target_id'] === NULL;
+  $empty_value = !isset($item['value']) || $item['value'] == '';
+  $empty_target_id = !isset($item['target_id']) || $item['target_id'] == NULL;
 
   return $empty_value && $empty_target_id;
 }
@@ -51,15 +51,74 @@ function text_or_entity_field_is_empty($item, $field) {
 function text_or_entity_field_validate($entity_type, $entity, $field, $instance, $langcode, $items, &$errors) {
   $target_type = $field['settings']['entity_selection']['target_type'];
 
+  // Validate all text_or_entity items.
   foreach ($items as $delta => $item) {
-    // TODO: Really verify value / target_id combination.
-    if (text_or_entity_field_is_empty($item, $field) && isset($item['target_id']) && $item['target_id'] !== NULL) {
-      // Empty value with non-empty target_id.
+    if (text_or_entity_field_is_empty($item, $field)) {
+      // Nothing to validate, move along.
+      continue;
+    }
+    $empty_value = !isset($item['value']) || $item['value'] == '';
+    $empty_target_id = !isset($item['target_id']) || $item['target_id'] == NULL;
+    if ($empty_target_id) {
+      // No entity reference, validate text value as matching nothing.
+      $target_matches = text_or_entity_query_entity_label($field, $instance, $item['value'], TRUE);
+      if (!count($target_matches)) {
+        // No matching entity for text value, move along.
+        continue;
+      }
+      // Missing entity reference for matching text value.
+      $missing_id = $target_matches[0][$item['value']]['target_id'];
       $errors[$field['field_name']][$langcode][$delta][] = array(
-        'error' => 'text_or_entity_empty_label',
-        'message' => t('Referenced entity (@type: @id) has empty text label.',
-          array('@type' => $target_type, '@id' => $item['target_id'])),
+        'error' => 'text_or_entity_missing_target_id',
+        'message' => t('Missing @type reference (@id) for matching text value \'@value\'.',
+          array('@type' => $target_type, '@id' => $missing_id, '@value' => $item['value'])),
       );
+    }
+    else {
+      // Validate entity reference target type.
+      $target_entity = entity_load($target_type, array($item['target_id']));
+      $target_entity = $target_entity[array_keys($target_entity)[0]];
+      if (empty($target_entity)) {
+        // Invalid entity reference for target type, move along with an error.
+        $errors[$field['field_name']][$langcode][$delta][] = array(
+          'error' => 'text_or_entity_invalid_target_type',
+          'message' => t('Invalid @type reference (@id) for target type.',
+            array('@type' => $target_type, '@id' => $item['target_id'])),
+        );
+        continue;
+      }
+      // Validate entity reference target bundle(s).
+      $target_bundles = $field['settings']['entity_selection']['target_bundles'];
+      if (!empty($target_bundles)) {
+        list(,,$entity_bundle) = entity_extract_ids($entity_type, $target_entity);
+        if (!in_array($entity_bundle, $target_bundles)) {
+          // Invalid entity reference for target bundle(s), move along with an error.
+          $errors[$field['field_name']][$langcode][$delta][] = array(
+            'error' => 'text_or_entity_invalid_target_bundle',
+            'message' => t('Invalid @type reference (@id) bundle \'@bundle\'.',
+              array('@type' => $target_type, '@id' => $item['target_id'], '@bundle' => $entity_bundle)),
+          );
+        }
+      }
+      // Validate text value as matching label of referenced entity.
+      $entity_label = entity_label($target_type, $target_entity);
+      if ($empty_value) {
+        // Missing text value, move along with an error.
+        $errors[$field['field_name']][$langcode][$delta][] = array(
+          'error' => 'text_or_entity_missing_value',
+          'message' => t('Missing text value \'@label\' for @type reference (@id).',
+            array('@label' => $entity_label, '@type' => $target_type, '@id' => $item['target_id'])),
+        );
+        continue;
+      }
+      if (strcmp($entity_label, $item['value'])) {
+        // Referenced entity label does not match text value.
+        $errors[$field['field_name']][$langcode][$delta][] = array(
+          'error' => 'text_or_entity_invalid_value',
+          'message' => t('Referenced @type \'@label\' (@id) does not match text value \'@value\'.',
+            array('@type' => $target_type, '@label' => $entity_label, '@id' => $item['target_id'], '@value' => $item['value'])),
+        );
+      }
     }
   }
 }
@@ -226,7 +285,7 @@ function text_or_entity_field_widget_info() {
       'field types' => array('text_or_entity'),
       'settings' => array(
         'size' => 60,
-        'match_operator' => 'starts_with',
+        'match_operator' => 'STARTS_WITH',
         'limit' => 10,
       ),
     ),
@@ -251,14 +310,14 @@ function text_or_entity_field_widget_settings_form($field, $instance) {
       '#required' => TRUE,
       '#element_validate' => array('element_validate_integer_positive'),
     );
-    // Autocomplete match operator (starts_with or contains).
+    // Autocomplete match operator (STARTS_WITH or CONTAINS).
     $form['match_operator'] = array(
       '#type' => 'select',
       '#title' => t('Autocomplete match operator'),
       '#default_value' => $settings['match_operator'],
       '#options' => array(
-        'starts_with' => t('Starts with'),
-        'contains' => t('Contains'),
+        'STARTS_WITH' => t('Starts with'),
+        'CONTAINS' => t('Contains'),
       ),
       '#description' => t('Select the method used to collect autocomplete suggestions. Note that <em>Contains</em> can cause performance issues on sites with thousands of records.'),
     );
@@ -398,11 +457,14 @@ function text_or_entity_autocomplete_matches_json_output($field, $instance, $ent
   // Merge autocomplete suggestions from matching entities.
   $matches = array_merge($matches, text_or_entity_query_entity_label($field, $instance, $string, FALSE));
 
-  // Merge and sanitize output.
+  // Process matches and sanitize output.
+  $limit = $instance['widget']['settings']['limit'];
   $suggestions = array();
   foreach ($matches as $key => $match) {
     // Add a class wrapper for a few required CSS overrides.
     $suggestions[$key] = '<div class="reference-autocomplete">' . check_plain($match['value']) . '</div>';
+    if (!--$limit)
+      continue;
   }
   asort($suggestions, SORT_LOCALE_STRING);
 
@@ -470,7 +532,7 @@ function text_or_entity_field_formatter_view($entity_type, $entity, $field, $ins
  * @param $string
  *   String or partial string to search for.
  * @param $exact
- *   Use exact match instead of starts_with / contains.
+ *   Use exact match instead of STARTS_WITH / CONTAINS.
  *
  * @return array
  *   Matching text values found in the specified field's data, for example:
@@ -480,40 +542,44 @@ function text_or_entity_field_formatter_view($entity_type, $entity, $field, $ins
  *   ))
  */
 function text_or_entity_query_field_data($field, $instance, $string, $exact) {
+  // Only process non-empty string and text_or_entity fields.
+  if ($string == '' || $field['type'] != 'text_or_entity') {
+    return array();
+  }
+  // Autocomplete widget settings.
   $widget = $instance['widget'];
   $match_operator = $widget['settings']['match_operator'];
   $limit = $widget['settings']['limit'];
+
   $matches = array();
 
-  // Do not act upon empty search string or unrelated fields.
-  if ($string != '' && $field['type'] == 'text_or_entity') {
-    // Build query to search for existing field data
-    $field_name = $field['field_name'];
-    $query = db_select('field_data_' . $field_name)
-      ->fields('field_data_' . $field_name, array($field_name . '_value'));
-    if ($exact) {
-      // Query for exact value of $string
-      $query->condition($field_name . '_value', $string, '=');
+  // Build query to search for existing field data
+  $field_name = $field['field_name'];
+  $query = db_select('field_data_' . $field_name)
+    ->fields('field_data_' . $field_name, array($field_name . '_value'));
+  if ($exact) {
+    // Query for exact value of $string
+    $query->condition($field_name . '_value', $string, '=');
+  }
+  else {
+    // Query for value containing or starting with $string
+    $needle = db_like($string) . '%';
+    if ($match_operator == 'CONTAINS') {
+      $needle = '%' . $needle;
     }
-    else {
-      // Query for value containing or starting with $string
-      $needle = db_like($string) . '%';
-      if ($match_operator == 'contains') {
-        $needle = '%' . $needle;
-      }
-      $query->condition($field_name . '_value', $needle, 'LIKE');
-    }
-    $query->groupBy($field_name . '_value')
-      ->orderBy($field_name . '_value')
-      ->range(0, $limit);
-    $result = $query->execute();
-    foreach ($result as $value) {
-      $value = $value->{$field_name . '_value'};
-      $matches[$value] = array(
-        'value' => $value,
-        'target_id' => NULL,
-      );
-    }
+    $query->condition($field_name . '_value', $needle, 'LIKE');
+  }
+  $query->groupBy($field_name . '_value')
+    ->orderBy($field_name . '_value')
+    ->range(0, $limit);
+  $result = $query->execute();
+  // Process query result into matches array.
+  foreach ($result as $value) {
+    $value = $value->{$field_name . '_value'};
+    $matches[$value] = array(
+      'value' => $value,
+      'target_id' => NULL,
+    );
   }
 
   return $matches;
@@ -529,7 +595,7 @@ function text_or_entity_query_field_data($field, $instance, $string, $exact) {
  * @param $string
  *   String or partial string to search for.
  * @param $exact
- *   Use exact match instead of starts_with / contains.
+ *   Use exact match instead of STARTS_WITH / CONTAINS.
  *
  * @return array
  *   Matching text values found in the specified field's data, for example:
@@ -539,14 +605,119 @@ function text_or_entity_query_field_data($field, $instance, $string, $exact) {
  *   ))
  */
 function text_or_entity_query_entity_label($field, $instance, $string, $exact) {
+  // Only process non-empty string and text_or_entity fields.
+  if ($string == '' || $field['type'] != 'text_or_entity') {
+    return array();
+  }
+  // Autocomplete widget settings.
   $widget = $instance['widget'];
   $match_operator = $widget['settings']['match_operator'];
   $limit = $widget['settings']['limit'];
+  // Target entity type and bundles for that field.
+  $entity_type = $field['settings']['entity_selection']['target_type'];
+  $entity_bundles = $field['settings']['entity_selection']['target_bundles'];
+
   $matches = array();
 
-  // TODO: Query entities by label.
+  if ($entity_type == 'user' && module_exists('realname')) {
+    // Query users based on realname.
+    $query = db_select('realname')
+      ->fields('realname', array('uid', 'realname'));
+    if ($exact) {
+      // Query for exact value of $string.
+      $query->condition('realname', $string, '=');
+    }
+    else {
+      // Query for value containing or starting with $string.
+      $needle = db_like($string) . '%';
+      if ($match_operator == 'CONTAINS') {
+        $needle = '%' . $needle;
+      }
+      $query->condition('realname', $needle, 'LIKE');
+    }
+    $query->groupBy('uid')
+      ->orderBy('realname')
+      ->range(0, $limit);
+    $result = $query->execute();
+    // Process query result into matches array.
+    foreach ($result as $value) {
+      $matches[$value->realname] = array(
+        'value' => $value->realname,
+        'target_id' => $value->uid,
+      );
+    }
+  }
+  else {
+    // Query the database to see which entities match.
+    $query = new EntityFieldQuery();
+    $query->entityCondition('entity_type', $entity_type);
+    if (!empty($entity_bundles)) {
+      $query->entityCondition('bundle', $entity_bundles, "IN");
+    }
+    $label_column = _text_or_entity_resolve_entity_label_column($entity_type);
+    if ($exact) {
+      $query->propertyCondition($label_column, $string, '=');
+    }
+    else {
+      // Query for value containing or starting with $string.
+      $needle = db_like($string) . '%';
+      if ($match_operator == 'CONTAINS') {
+        $needle = '%' . $needle;
+      }
+      $query->propertyCondition($label_column, $needle, 'LIKE');
+    }
+    $query->range(0, $limit);
+    $matching_entities = $query->execute();
+    // Process query result into matches.
+    if (!empty($matching_entities[$entity_type])) {
+      $matching_entities = entity_load($entity_type, array_keys($matching_entities[$entity_type]));
+      foreach ($matching_entities as $entity) {
+        list($entity_id,,) = entity_extract_ids($entity_type, $entity);
+        $entity_label = entity_label($entity_type, $entity);
+        $matches[$entity_label] = array(
+          'value' => $entity_label,
+          'target_id' => $entity_id,
+        );
+      }
+    }
+  }
 
   return $matches;
+}
+
+/**
+ * Returns the name of the column to use as the entity label for a given entity.
+ * (Code taken from entityreference_autocomplete module).
+ *
+ * @param string $entity_type
+ *   The entity type for which the column to use as label needs to be resolved.
+ *
+ * @return bool|string
+ *   The name of the column to use as the entity label for the passed entity, or
+ *   FALSE if no column can be used for that.
+ */
+function _text_or_entity_resolve_entity_label_column($entity_type) {
+  $entity_info = entity_get_info($entity_type);
+  $label_column = FALSE;
+
+  // Check if the entity has a label column defined.
+  if (isset($entity_info['entity keys']['label'])) {
+    $label_column = $entity_info['entity keys']['label'];
+  }
+  else {
+    switch ($entity_type) {
+      case 'user':
+        $label_column = 'name';
+        break;
+    }
+  }
+  // Still no label available, fall back to entity id column.
+  if (!$label_column) {
+    $label_column = $entity_info['entity keys']['id'];
+    return $label_column;
+  }
+
+  return $label_column;
 }
 
 /**
