@@ -253,7 +253,7 @@ function text_or_entity_field_widget_settings_form($field, $instance) {
     $form['match_operator'] = array(
       '#type' => 'select',
       '#title' => t('Autocomplete match operator'),
-      '#default_value' => $settings['autocomplete_match'],
+      '#default_value' => $settings['match_operator'],
       '#options' => array(
         'starts_with' => t('Starts with'),
         'contains' => t('Contains'),
@@ -264,7 +264,7 @@ function text_or_entity_field_widget_settings_form($field, $instance) {
       '#type' => 'textfield',
       '#title' => t('Autocomplete limit'),
       '#description' => t('Limit the size of the autocomplete suggestions list (<100).'),
-      '#default_value' => $settings['autocomplete_match'],
+      '#default_value' => $settings['limit'],
       '#size' => 3,
       '#maxlength' => 2,
       '#element_validate' => array('element_validate_integer_positive'),
@@ -384,10 +384,10 @@ function text_or_entity_autocomplete_callback($field_name, $entity_type, $bundle
  */
 function text_or_entity_autocomplete_matches_json_output($field, $instance, $entity_type, $string = '') {
   // Get autocomplete suggestions from previous text values.
-  $matches = text_or_entity_query_field_data($field, $string, FALSE);
+  $matches = text_or_entity_query_field_data($field, $instance, $string, FALSE);
 
   // Merge autocomplete suggestions from matching entities.
-  $matches = array_merge($matches, text_or_entity_query_entity_label($field, $string, FALSE));
+  $matches = array_merge($matches, text_or_entity_query_entity_label($field, $instance, $string, FALSE));
 
   // Merge and sanitize output.
   foreach ($matches as $key => &$value) {
@@ -454,6 +454,8 @@ function text_or_entity_field_formatter_view($entity_type, $entity, $field, $ins
  *
  * @param $field
  *   Text or Entity field for which this query should be made.
+ * @param $instance
+ *   Text or Entity field instance for which this query should be made.
  * @param $string
  *   String or partial string to search for.
  * @param $exact
@@ -466,7 +468,10 @@ function text_or_entity_field_formatter_view($entity_type, $entity, $field, $ins
  *     'target_id' => NULL,
  *   ))
  */
-function text_or_entity_query_field_data($field, $string, $exact) {
+function text_or_entity_query_field_data($field, $instance, $string, $exact) {
+  $widget = $instance['widget'];
+  $match_operator = $widget['settings']['match_operator'];
+  $limit = $widget['settings']['limit'];
   $matches = array();
 
   // Do not act upon empty search string or unrelated fields.
@@ -482,14 +487,14 @@ function text_or_entity_query_field_data($field, $string, $exact) {
     else {
       // Query for value containing or starting with $string
       $needle = db_like($string) . '%';
-//      if ($field['settings']['text_or_entity']['autocomplete_match'] == 'contains') {
-//        $needle = '%' . $needle;
-//      }
+      if ($match_operator == 'contains') {
+        $needle = '%' . $needle;
+      }
       $query->condition($field_name . '_value', $needle, 'LIKE');
     }
     $query->groupBy($field_name . '_value')
       ->orderBy($field_name . '_value')
-      ->range(0, 10);
+      ->range(0, $limit);
     $result = $query->execute();
     foreach ($result as $value) {
       $value = $value->{$field_name . '_value'};
@@ -508,6 +513,8 @@ function text_or_entity_query_field_data($field, $string, $exact) {
  *
  * @param $field
  *   Text or Entity field for which this query should be made.
+ * @param $instance
+ *   Text or Entity field instance for which this query should be made.
  * @param $string
  *   String or partial string to search for.
  * @param $exact
@@ -520,7 +527,7 @@ function text_or_entity_query_field_data($field, $string, $exact) {
  *     'target_id' => 10,
  *   ))
  */
-function text_or_entity_query_entity_label($field, $string, $exact) {
+function text_or_entity_query_entity_label($field, $instance, $string, $exact) {
   $matches = array();
 
   // TODO: Query entities by label.
