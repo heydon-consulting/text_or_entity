@@ -243,6 +243,7 @@ function text_or_entity_field_widget_settings_form($field, $instance) {
 
   // Only process text_or_entity widget
   if ($widget['type'] == 'text_or_entity_autocomplete') {
+    // Textfield size.
     $form['size'] = array(
       '#type' => 'textfield',
       '#title' => t('Size of textfield'),
@@ -250,6 +251,7 @@ function text_or_entity_field_widget_settings_form($field, $instance) {
       '#required' => TRUE,
       '#element_validate' => array('element_validate_integer_positive'),
     );
+    // Autocomplete match operator (starts_with or contains).
     $form['match_operator'] = array(
       '#type' => 'select',
       '#title' => t('Autocomplete match operator'),
@@ -260,6 +262,7 @@ function text_or_entity_field_widget_settings_form($field, $instance) {
       ),
       '#description' => t('Select the method used to collect autocomplete suggestions. Note that <em>Contains</em> can cause performance issues on sites with thousands of records.'),
     );
+    // Autocomplete suggestions limit (<100).
     $form['limit'] = array(
       '#type' => 'textfield',
       '#title' => t('Autocomplete limit'),
@@ -280,7 +283,7 @@ function text_or_entity_field_widget_settings_form($field, $instance) {
  */
 function text_or_entity_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
   if ($instance['widget']['type'] == 'text_or_entity_autocomplete') {
-    // Reuse text_textfield widget form.
+    // Reuse text_textfield widget for value element.
     $instance['widget']['type'] = 'text_textfield';
     $element = text_field_widget_form($form, $form_state, $field, $instance, $langcode, $items, $delta, $element);
     // Add autocomplete path and validation to value field.
@@ -288,10 +291,16 @@ function text_or_entity_field_widget_form(&$form, &$form_state, $field, $instanc
       '#autocomplete_path' => 'text_or_entity/autocomplete/' .
         $element['#field_name'] . '/' . $element['#entity_type'] . '/' . $element['#bundle'],
       '#element_validate' => array('_text_or_entity_autocomplete_validate'),
+      '#field' => $field,
+      '#instance' => $instance,
+      '#langcode' => $langcode,
+      '#delta' => $delta,
     );
+    // Store target_id in a hidden element.
+    $target_id = isset($items[$delta]) && !empty($items[$delta]['target_id']) ? $items[$delta]['target_id'] : NULL;
     $element['target_id'] = array(
       '#type' => 'hidden',
-      '#default_value' => isset($items[$delta]['target_id']) ? $items[$delta]['target_id'] : NULL,
+      '#default_value' => $target_id,
     );
   }
 
@@ -301,7 +310,7 @@ function text_or_entity_field_widget_form(&$form, &$form_state, $field, $instanc
 /**
  * Implements hook_menu().
  *
- * We only need this for the widget autocomplete feature.
+ * We only need this for text_or_entity_autocomplete widget.
  */
 function text_or_entity_menu() {
   $items = array();
@@ -390,25 +399,26 @@ function text_or_entity_autocomplete_matches_json_output($field, $instance, $ent
   $matches = array_merge($matches, text_or_entity_query_entity_label($field, $instance, $string, FALSE));
 
   // Merge and sanitize output.
-  foreach ($matches as $key => &$value) {
+  $suggestions = array();
+  foreach ($matches as $key => $match) {
     // Add a class wrapper for a few required CSS overrides.
-    // We use $key since $value might hold the link to an entity.
-    $value = '<div class="reference-autocomplete">' . check_plain($key) . '</div>';
+    $suggestions[$key] = '<div class="reference-autocomplete">' . check_plain($match['value']) . '</div>';
   }
-  asort($matches, SORT_LOCALE_STRING);
+  asort($suggestions, SORT_LOCALE_STRING);
 
-  drupal_json_output($matches);
+  drupal_json_output($suggestions);
 }
 
 /**
  * Validation callback for widget form.
  */
 function _text_or_entity_autocomplete_validate($element, &$form_state, $form) {
-  $target_id = NULL;
+  // Determine target_id from text value.
+  $value = $form_state['values'][$element['#field_name']][$element['#langcode']][$element['#delta']]['value'];
+  $matches = text_or_entity_query_entity_label($element['#field'], $element['#instance'], $value, TRUE);
+  $target_id = count($matches) ? $matches[$value]['target_id'] : NULL;
 
-  // TODO: Determine target_id from autocompleted value.
-
-  // Change submitted form value for target_id.
+  // Set target_id in the submitted form values.
   $parents = $element['#array_parents'];
   array_pop($parents);
   $parent_element = drupal_array_get_nested_value($form, $parents);
@@ -446,6 +456,7 @@ function text_or_entity_field_formatter_view($entity_type, $entity, $field, $ins
       }
     }
   }
+
   return $elements;
 }
 
@@ -528,6 +539,9 @@ function text_or_entity_query_field_data($field, $instance, $string, $exact) {
  *   ))
  */
 function text_or_entity_query_entity_label($field, $instance, $string, $exact) {
+  $widget = $instance['widget'];
+  $match_operator = $widget['settings']['match_operator'];
+  $limit = $widget['settings']['limit'];
   $matches = array();
 
   // TODO: Query entities by label.
