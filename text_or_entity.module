@@ -226,7 +226,8 @@ function text_or_entity_field_widget_info() {
       'field types' => array('text_or_entity'),
       'settings' => array(
         'size' => 60,
-        // TODO: Add autocomplete suggestions limit to widget settings.
+        'match_operator' => 'starts_with',
+        'limit' => 10,
       ),
     ),
   );
@@ -248,6 +249,26 @@ function text_or_entity_field_widget_settings_form($field, $instance) {
       '#default_value' => $settings['size'],
       '#required' => TRUE,
       '#element_validate' => array('element_validate_integer_positive'),
+    );
+    $form['match_operator'] = array(
+      '#type' => 'select',
+      '#title' => t('Autocomplete match operator'),
+      '#default_value' => $settings['autocomplete_match'],
+      '#options' => array(
+        'starts_with' => t('Starts with'),
+        'contains' => t('Contains'),
+      ),
+      '#description' => t('Select the method used to collect autocomplete suggestions. Note that <em>Contains</em> can cause performance issues on sites with thousands of records.'),
+    );
+    $form['limit'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Autocomplete limit'),
+      '#description' => t('Limit the size of the autocomplete suggestions list (<100).'),
+      '#default_value' => $settings['autocomplete_match'],
+      '#size' => 3,
+      '#maxlength' => 2,
+      '#element_validate' => array('element_validate_integer_positive'),
+      '#required' => TRUE,
     );
   }
 
@@ -362,9 +383,11 @@ function text_or_entity_autocomplete_callback($field_name, $entity_type, $bundle
  *   The label of the entity to query by.
  */
 function text_or_entity_autocomplete_matches_json_output($field, $instance, $entity_type, $string = '') {
-  $matches = array();
+  // Get autocomplete suggestions from previous text values.
+  $matches = text_or_entity_query_field_data($field, $string, FALSE);
 
-  // TODO: Build autocomplete suggestions from previous text values and matching entities.
+  // Merge autocomplete suggestions from matching entities.
+  $matches = array_merge($matches, text_or_entity_query_entity_label($field, $string, FALSE));
 
   // Merge and sanitize output.
   foreach ($matches as $key => &$value) {
@@ -424,6 +447,85 @@ function text_or_entity_field_formatter_view($entity_type, $entity, $field, $ins
     }
   }
   return $elements;
+}
+
+/**
+ * Helper function to query existing field data.
+ *
+ * @param $field
+ *   Text or Entity field for which this query should be made.
+ * @param $string
+ *   String or partial string to search for.
+ * @param $exact
+ *   Use exact match instead of starts_with / contains.
+ *
+ * @return array
+ *   Matching text values found in the specified field's data, for example:
+ *   array('Text value' => array(
+ *     'value' => 'Text value',
+ *     'target_id' => NULL,
+ *   ))
+ */
+function text_or_entity_query_field_data($field, $string, $exact) {
+  $matches = array();
+
+  // Do not act upon empty search string or unrelated fields.
+  if ($string != '' && $field['type'] == 'text_or_entity') {
+    // Build query to search for existing field data
+    $field_name = $field['field_name'];
+    $query = db_select('field_data_' . $field_name)
+      ->fields('field_data_' . $field_name, array($field_name . '_value'));
+    if ($exact) {
+      // Query for exact value of $string
+      $query->condition($field_name . '_value', $string, '=');
+    }
+    else {
+      // Query for value containing or starting with $string
+      $needle = db_like($string) . '%';
+//      if ($field['settings']['text_or_entity']['autocomplete_match'] == 'contains') {
+//        $needle = '%' . $needle;
+//      }
+      $query->condition($field_name . '_value', $needle, 'LIKE');
+    }
+    $query->groupBy($field_name . '_value')
+      ->orderBy($field_name . '_value')
+      ->range(0, 10);
+    $result = $query->execute();
+    foreach ($result as $value) {
+      $value = $value->{$field_name . '_value'};
+      $matches[$value] = array(
+        'value' => $value,
+        'target_id' => NULL,
+      );
+    }
+  }
+
+  return $matches;
+}
+
+/**
+ * Helper function to query entities by their label value.
+ *
+ * @param $field
+ *   Text or Entity field for which this query should be made.
+ * @param $string
+ *   String or partial string to search for.
+ * @param $exact
+ *   Use exact match instead of starts_with / contains.
+ *
+ * @return array
+ *   Matching text values found in the specified field's data, for example:
+ *   array('Entity label' => array(
+ *     'value' => 'Entity label',
+ *     'target_id' => 10,
+ *   ))
+ */
+function text_or_entity_query_entity_label($field, $string, $exact) {
+  $matches = array();
+
+  // TODO: Query entities by label.
+
+  return $matches;
 }
 
 /**
