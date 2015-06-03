@@ -475,6 +475,8 @@ function text_or_entity_autocomplete_matches_json_output($field, $instance, $ent
  * Validation callback for widget form.
  */
 function _text_or_entity_autocomplete_validate($element, &$form_state, $form) {
+  if (!isset($form_state['values'][$element['#field_name']]))
+    return;
   // Determine target_id from text value.
   $value = $form_state['values'][$element['#field_name']][$element['#langcode']][$element['#delta']]['value'];
   $matches = text_or_entity_query_entity_label($element['#field'], $element['#instance'], $value, TRUE);
@@ -776,16 +778,70 @@ function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $rese
   if (!$entity_type)
     return isset($field_map[0]) ? $field_map[0] : array();
   if (!isset($field_map[$entity_type])) {
-    drupal_set_message(t('Invalid entity type \'@type\'', array('@type' => $entity_type)), 'warning');
     return array();
   }
   if (!$entity_bundle)
     return $field_map[$entity_type][0];
   else if (!isset($field_map[$entity_type][$entity_bundle])) {
-    drupal_set_message(t('Invalid entity bundle \'@bundle\'', array('@bundle' => $entity_bundle)), 'warning');
     return array();
   }
   return $field_map[$entity_type][$entity_bundle];
+}
+
+/**
+ * Implements hook_entity_insert().
+ *
+ * Set target_id of previously non-existing entity label.
+ */
+function text_or_entity_entity_insert($entity, $entity_type) {
+  list($entity_id,,$entity_bundle) = entity_extract_ids($entity_type, $entity);
+  $fields = _text_or_entity_field_map($entity_type, $entity_bundle);
+  foreach ($fields as $field_name) {
+    $table_name = 'field_data_' . $field_name;
+    $target_id_column = $field_name . '_target_id';
+    $value_column = $field_name . '_value';
+    $entity_label = entity_label($entity_type, $entity);
+    db_update($table_name)
+      ->fields(array($target_id_column => $entity_id))
+      ->condition($value_column, $entity_label, '=')
+      ->execute();
+  }
+}
+
+/**
+ * Implements hook_entity_update().
+ */
+function text_or_entity_entity_update($entity, $entity_type) {
+  list($entity_id,,$entity_bundle) = entity_extract_ids($entity_type, $entity);
+  $fields = _text_or_entity_field_map($entity_type, $entity_bundle);
+  foreach ($fields as $field_name) {
+    $table_name = 'field_data_' . $field_name;
+    $target_id_column = $field_name . '_target_id';
+    $value_column = $field_name . '_value';
+    $entity_label = entity_label($entity_type, $entity);
+    db_update($table_name)
+      ->fields(array($value_column => $entity_label))
+      ->condition($target_id_column, $entity_id, '=')
+      ->execute();
+  }
+}
+
+/**
+ * Implements hook_entity_delete().
+ */
+function text_or_entity_entity_delete($entity, $entity_type) {
+  list($entity_id,,$entity_bundle) = entity_extract_ids($entity_type, $entity);
+  $fields = _text_or_entity_field_map($entity_type, $entity_bundle);
+  foreach ($fields as $field_name) {
+    $table_name = 'field_data_' . $field_name;
+    $target_id_column = $field_name . '_target_id';
+    $value_column = $field_name . '_value';
+    $entity_label = entity_label($entity_type, $entity);
+    db_update($table_name)
+      ->fields(array($target_id_column => NULL))
+      ->condition($value_column, $entity_label, '=')
+      ->execute();
+  }
 }
 
 /**
