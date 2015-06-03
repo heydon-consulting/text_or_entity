@@ -414,11 +414,11 @@ function text_or_entity_menu() {
 /**
  * Menu Access callback for the Text or Entity autocomplete widget.
  *
- * @param $field_name
+ * @param string $field_name
  *   The name of the text_or_entity field.
- * @param $entity_type
+ * @param string $entity_type
  *   The entity type.
- * @param $bundle_name
+ * @param string $bundle_name
  *   The bundle name.
  *
  * @return bool
@@ -437,13 +437,13 @@ function text_or_entity_autocomplete_access_callback($field_name, $entity_type, 
 /**
  * Menu callback: autocomplete previous text values or the label of an entity.
  *
- * @param $field_name
+ * @param string $field_name
  *   The name of the entity-reference field.
- * @param $entity_type
+ * @param string $entity_type
  *   The entity type.
- * @param $bundle_name
+ * @param string $bundle_name
  *   The bundle name.
- * @param $string
+ * @param string $string
  *   The label of the entity to query by.
  */
 function text_or_entity_autocomplete_callback($field_name, $entity_type, $bundle_name, $string = '') {
@@ -466,13 +466,13 @@ function text_or_entity_autocomplete_callback($field_name, $entity_type, $bundle
 /**
  * Output JSON based on given field, instance and string.
  *
- * @param $field
+ * @param array $field
  *   The field array definition.
- * @param $instance
+ * @param array $instance
  *   The instance array definition.
- * @param $entity_type
+ * @param string $entity_type
  *   The entity type.
- * @param $string
+ * @param string $string
  *   The label of the entity to query by.
  */
 function text_or_entity_autocomplete_matches_json_output($field, $instance, $entity_type, $string = '') {
@@ -588,13 +588,13 @@ function text_or_entity_field_formatter_view($entity_type, $entity, $field, $ins
 /**
  * Helper function to query existing field data.
  *
- * @param $field
+ * @param array $field
  *   Text or Entity field for which this query should be made.
- * @param $instance
+ * @param array $instance
  *   Text or Entity field instance for which this query should be made.
- * @param $string
+ * @param string $string
  *   String or partial string to search for.
- * @param $exact
+ * @param bool $exact
  *   Use exact match instead of STARTS_WITH / CONTAINS.
  *
  * @return array
@@ -651,13 +651,13 @@ function text_or_entity_query_field_data($field, $instance, $string, $exact) {
 /**
  * Helper function to query entities by their label value.
  *
- * @param $field
+ * @param array $field
  *   Text or Entity field for which this query should be made.
- * @param $instance
+ * @param array $instance
  *   Text or Entity field instance for which this query should be made.
- * @param $string
+ * @param string $string
  *   String or partial string to search for.
- * @param $exact
+ * @param bool $exact
  *   Use exact match instead of STARTS_WITH / CONTAINS.
  *
  * @return array
@@ -666,7 +666,10 @@ function text_or_entity_query_field_data($field, $instance, $string, $exact) {
  *     'value' => 'Entity label',
  *     'target_id' => 10,
  *   ))
+
+ * @throws \EntityMalformedException
  */
+
 function text_or_entity_query_entity_label($field, $instance, $string, $exact) {
   // Only process non-empty string and text_or_entity fields.
   if ($string == '' || $field['type'] != 'text_or_entity') {
@@ -785,10 +788,10 @@ function _text_or_entity_resolve_entity_label_column($entity_type) {
 /**
  * Helper function to get all text_or_entity fields affected by entity change.
  *
- * @param $entity_type
+ * @param string $entity_type
  *   Target entity type to look for in text_or_entity fields.
  *   Leave empty to get all text_or_entity fields.
- * @param $entity_bundle
+ * @param string $entity_bundle
  *   Target entity bundle to look for in text_or_entity fields.
  *   Leave empty for all entity bundles of $entity_type.
  * @param bool $reset_cache
