@@ -355,11 +355,15 @@ function text_or_entity_field_widget_form(&$form, &$form_state, $field, $instanc
       '#langcode' => $langcode,
       '#delta' => $delta,
     );
-    // Store target_id in a hidden element.
+    // Store target_id and entity_type in hidden elements.
     $target_id = isset($items[$delta]) && !empty($items[$delta]['target_id']) ? $items[$delta]['target_id'] : NULL;
     $element['target_id'] = array(
       '#type' => 'hidden',
       '#default_value' => $target_id,
+    );
+    $element['source_type'] = array(
+      '#type' => 'hidden',
+      '#value' => $element['#entity_type'],
     );
   }
 
@@ -790,8 +794,6 @@ function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $rese
 
 /**
  * Implements hook_entity_insert().
- *
- * Set target_id of previously non-existing entity label.
  */
 function text_or_entity_entity_insert($entity, $entity_type) {
   list($entity_id,,$entity_bundle) = entity_extract_ids($entity_type, $entity);
@@ -801,10 +803,20 @@ function text_or_entity_entity_insert($entity, $entity_type) {
     $target_id_column = $field_name . '_target_id';
     $value_column = $field_name . '_value';
     $entity_label = entity_label($entity_type, $entity);
+    // Update target_id of fields matching inserted entity label.
     db_update($table_name)
       ->fields(array($target_id_column => $entity_id))
       ->condition($value_column, $entity_label, '=')
       ->execute();
+    // Flush field cache of affected host entities.
+    $source_ids = db_select($table_name, 't')
+      ->fields('t', array('entity_id', $field_name . '_source_type'))
+      ->condition($target_id_column, $entity_id, '=')
+      ->execute()
+      ->fetchAllKeyed();
+    foreach ($source_ids as $source_id => $source_type) {
+      cache_clear_all('field:'.$source_type.':'.$source_id, 'cache_field');
+    }
   }
 }
 
@@ -819,10 +831,20 @@ function text_or_entity_entity_update($entity, $entity_type) {
     $target_id_column = $field_name . '_target_id';
     $value_column = $field_name . '_value';
     $entity_label = entity_label($entity_type, $entity);
+    // Update text value of fields referencing updated entity.
     db_update($table_name)
       ->fields(array($value_column => $entity_label))
       ->condition($target_id_column, $entity_id, '=')
       ->execute();
+    // Flush field cache of affected host entities.
+    $source_ids = db_select($table_name, 't')
+      ->fields('t', array('entity_id', $field_name . '_source_type'))
+      ->condition($target_id_column, $entity_id, '=')
+      ->execute()
+      ->fetchAllKeyed();
+    foreach ($source_ids as $source_id => $source_type) {
+      cache_clear_all('field:'.$source_type.':'.$source_id, 'cache_field');
+    }
   }
 }
 
@@ -837,6 +859,16 @@ function text_or_entity_entity_delete($entity, $entity_type) {
     $target_id_column = $field_name . '_target_id';
     $value_column = $field_name . '_value';
     $entity_label = entity_label($entity_type, $entity);
+    // Flush field cache of affected host entities.
+    $source_ids = db_select($table_name, 't')
+      ->fields('t', array('entity_id', $field_name . '_source_type'))
+      ->condition($target_id_column, $entity_id, '=')
+      ->execute()
+      ->fetchAllKeyed();
+    foreach ($source_ids as $source_id => $source_type) {
+      cache_clear_all('field:'.$source_type.':'.$source_id, 'cache_field');
+    }
+    // Update target_id of fields matching entity label.
     db_update($table_name)
       ->fields(array($target_id_column => NULL))
       ->condition($value_column, $entity_label, '=')

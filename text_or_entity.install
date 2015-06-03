@@ -23,6 +23,12 @@ function text_or_entity_field_schema($field) {
           'unsigned' => TRUE,
           'not null' => FALSE,
         ),
+        'source_type' => array(
+          'description' => 'The entity type of the source entity.',
+          'type' => 'varchar',
+          'length' => 32,
+          'not null' => TRUE,
+        ),
       ),
       'indexes' => array(
         'target_id' => array('target_id'),
