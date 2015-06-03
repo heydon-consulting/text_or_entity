@@ -29,7 +29,7 @@ function text_or_entity_field_info() {
         'text_processing' => FALSE,
       ),
       'default_widget' => 'text_or_entity_autocomplete',
-      'default_formatter' => 'text_or_entity_link',
+      'default_formatter' => 'text_or_entity_label',
 
     ),
   );
@@ -498,11 +498,45 @@ function _text_or_entity_autocomplete_validate($element, &$form_state, $form) {
  */
 function text_or_entity_field_formatter_info() {
   return array(
-    'text_or_entity_link' => array(
-      'label' => t('Text or Entity link'),
+    'text_or_entity_label' => array(
+      'label' => t('Text or Entity label'),
       'field types' => array('text_or_entity'),
+      'settings' => array('link' => TRUE),
     ),
   );
+}
+
+/**
+ * Implements hook_field_formatter_settings_form().
+ */
+function text_or_entity_field_formatter_settings_form($field, $instance, $view_mode, $form, &$form_state) {
+  $display = $instance['display'][$view_mode];
+  $settings = $display['settings'];
+  $element = array();
+  if ($display['type'] == 'text_or_entity_label') {
+    $element['link'] = array(
+      '#title' => t('Link label to the referenced entity'),
+      '#type' => 'checkbox',
+      '#default_value' => $settings['link'],
+    );
+  }
+  return $element;
+}
+
+/**
+ * Implements hook_field_formatter_settings_summary().
+ */
+function text_or_entity_field_formatter_settings_summary($field, $instance, $view_mode) {
+  $display = $instance['display'][$view_mode];
+  $settings = $display['settings'];
+
+  $summary = array();
+
+  if ($display['type'] == 'text_or_entity_label') {
+    $summary[] = $settings['link'] ? t('Link to the referenced entity') : t('No link');
+  }
+
+  return implode('<br />', $summary);
 }
 
 /**
