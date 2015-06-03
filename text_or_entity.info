@@ -1,6 +1,5 @@
 name = Text or Entity
 description = Provides a field that can reference entities by text value.
-version = "7.x-1.x"
 core = 7.x
 package = Fields
 dependencies[] = entity

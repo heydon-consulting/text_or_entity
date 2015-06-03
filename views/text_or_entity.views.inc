@@ -13,7 +13,10 @@ function text_or_entity_field_views_data($field) {
   $entity_info = entity_get_info($field['settings']['entity_selection']['target_type']);
   foreach ($data as $table_name => $table_data) {
     $field_name = $field['field_name'] . '_target_id';
-    $replacements = array('@entity' => $entity_info['label'], '!field_name' => $field['field_name']);
+    $replacements = array(
+      '@entity' => $entity_info['label'],
+      '!field_name' => $field['field_name'],
+    );
     $data[$table_name][$field_name]['relationship'] = array(
       'handler' => 'views_handler_relationship',
       'base' => $entity_info['base table'],
@@ -39,7 +42,11 @@ function text_or_entity_field_views_data_views_data_alter(&$data, $field) {
     if (isset($target_entity_info['base table'])) {
       $entity_info = entity_get_info($entity_type);
       $pseudo_field_name = 'reverse_' . $field['field_name'] . '_' . $entity_type;
-      $replacements = array('@entity' => $entity_info['label'], '@target_entity' => $target_entity_info['label'], '!field_name' => $field['field_name']);
+      $replacements = array(
+        '@entity' => $entity_info['label'],
+        '@target_entity' => $target_entity_info['label'],
+        '!field_name' => $field['field_name'],
+      );
       $data[$target_entity_info['base table']][$pseudo_field_name]['relationship'] = array(
         'handler' => 'views_handler_relationship_entity_reverse',
         'field_name' => $field['field_name'],

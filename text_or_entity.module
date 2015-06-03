@@ -70,8 +70,13 @@ function text_or_entity_field_validate($entity_type, $entity, $field, $instance,
       $missing_id = $target_matches[0][$item['value']]['target_id'];
       $errors[$field['field_name']][$langcode][$delta][] = array(
         'error' => 'text_or_entity_missing_target_id',
-        'message' => t('Missing @type reference (@id) for matching text value \'@value\'.',
-          array('@type' => $target_type, '@id' => $missing_id, '@value' => $item['value'])),
+        'message' => t('Missing @type reference (@id) for matching text value "@value".',
+          array(
+            '@type' => $target_type,
+            '@id' => $missing_id,
+            '@value' => $item['value'],
+          )
+        ),
       );
     }
     else {
@@ -90,12 +95,12 @@ function text_or_entity_field_validate($entity_type, $entity, $field, $instance,
       // Validate entity reference target bundle(s).
       $target_bundles = $field['settings']['entity_selection']['target_bundles'];
       if (!empty($target_bundles)) {
-        list(,,$entity_bundle) = entity_extract_ids($entity_type, $target_entity);
+        list(, , $entity_bundle) = entity_extract_ids($entity_type, $target_entity);
         if (!in_array($entity_bundle, $target_bundles)) {
           // Invalid entity reference for target bundle(s), move along with an error.
           $errors[$field['field_name']][$langcode][$delta][] = array(
             'error' => 'text_or_entity_invalid_target_bundle',
-            'message' => t('Invalid @type reference (@id) bundle \'@bundle\'.',
+            'message' => t('Invalid @type reference (@id) bundle "@bundle".',
               array('@type' => $target_type, '@id' => $item['target_id'], '@bundle' => $entity_bundle)),
           );
         }
@@ -106,7 +111,7 @@ function text_or_entity_field_validate($entity_type, $entity, $field, $instance,
         // Missing text value, move along with an error.
         $errors[$field['field_name']][$langcode][$delta][] = array(
           'error' => 'text_or_entity_missing_value',
-          'message' => t('Missing text value \'@label\' for @type reference (@id).',
+          'message' => t('Missing text value "@label" for @type reference (@id).',
             array('@label' => $entity_label, '@type' => $target_type, '@id' => $item['target_id'])),
         );
         continue;
@@ -115,7 +120,7 @@ function text_or_entity_field_validate($entity_type, $entity, $field, $instance,
         // Referenced entity label does not match text value.
         $errors[$field['field_name']][$langcode][$delta][] = array(
           'error' => 'text_or_entity_invalid_value',
-          'message' => t('Referenced @type \'@label\' (@id) does not match text value \'@value\'.',
+          'message' => t('Referenced @type "@label" (@id) does not match text value "@value".',
             array('@type' => $target_type, '@label' => $entity_label, '@id' => $item['target_id'], '@value' => $item['value'])),
         );
       }
@@ -300,7 +305,7 @@ function text_or_entity_field_widget_settings_form($field, $instance) {
   $settings = $widget['settings'];
   $form = array();
 
-  // Only process text_or_entity widget
+  // Only process text_or_entity widget.
   if ($widget['type'] == 'text_or_entity_autocomplete') {
     // Textfield size.
     $form['size'] = array(
@@ -346,9 +351,9 @@ function text_or_entity_field_widget_form(&$form, &$form_state, $field, $instanc
     $instance['widget']['type'] = 'text_textfield';
     $element = text_field_widget_form($form, $form_state, $field, $instance, $langcode, $items, $delta, $element);
     // Add autocomplete path and validation to value field.
+    $autocomplete_path = 'text_or_entity/autocomplete/' . $element['#field_name'] . '/' . $element['#entity_type'] . '/' . $element['#bundle'];
     $element['value'] += array(
-      '#autocomplete_path' => 'text_or_entity/autocomplete/' .
-        $element['#field_name'] . '/' . $element['#entity_type'] . '/' . $element['#bundle'],
+      '#autocomplete_path' => $autocomplete_path,
       '#element_validate' => array('_text_or_entity_autocomplete_validate'),
       '#field' => $field,
       '#instance' => $instance,
@@ -400,7 +405,7 @@ function text_or_entity_menu() {
  * @param $bundle_name
  *   The bundle name.
  *
- * @return
+ * @return bool
  *   True if user can access this menu item.
  */
 function text_or_entity_autocomplete_access_callback($field_name, $entity_type, $bundle_name) {
@@ -446,9 +451,9 @@ function text_or_entity_autocomplete_callback($field_name, $entity_type, $bundle
  * Output JSON based on given field, instance and string.
  *
  * @param $field
- *   The field array defintion.
+ *   The field array definition.
  * @param $instance
- *   The instance array defintion.
+ *   The instance array definition.
  * @param $entity_type
  *   The entity type.
  * @param $string
@@ -467,8 +472,9 @@ function text_or_entity_autocomplete_matches_json_output($field, $instance, $ent
   foreach ($matches as $key => $match) {
     // Add a class wrapper for a few required CSS overrides.
     $suggestions[$key] = '<div class="reference-autocomplete">' . check_plain($match['value']) . '</div>';
-    if (!--$limit)
+    if (!--$limit) {
       continue;
+    }
   }
   asort($suggestions, SORT_LOCALE_STRING);
 
@@ -479,8 +485,9 @@ function text_or_entity_autocomplete_matches_json_output($field, $instance, $ent
  * Validation callback for widget form.
  */
 function _text_or_entity_autocomplete_validate($element, &$form_state, $form) {
-  if (!isset($form_state['values'][$element['#field_name']]))
+  if (!isset($form_state['values'][$element['#field_name']])) {
     return;
+  }
   // Determine target_id from text value.
   $value = $form_state['values'][$element['#field_name']][$element['#langcode']][$element['#delta']]['value'];
   $matches = text_or_entity_query_entity_label($element['#field'], $element['#instance'], $value, TRUE);
@@ -593,12 +600,12 @@ function text_or_entity_query_field_data($field, $instance, $string, $exact) {
 
   $matches = array();
 
-  // Build query to search for existing field data
+  // Build query to search for existing field data.
   $field_name = $field['field_name'];
   $query = db_select('field_data_' . $field_name)
     ->fields('field_data_' . $field_name, array($field_name . '_value'));
   if ($exact) {
-    // Query for exact value of $string
+    // Query for exact value of $string.
     $query->condition($field_name . '_value', $string, '=');
   }
   else {
@@ -727,7 +734,6 @@ function text_or_entity_query_entity_label($field, $instance, $string, $exact) {
 
 /**
  * Returns the name of the column to use as the entity label for a given entity.
- * (Code taken from entityreference_autocomplete module).
  *
  * @param string $entity_type
  *   The entity type for which the column to use as label needs to be resolved.
@@ -761,8 +767,7 @@ function _text_or_entity_resolve_entity_label_column($entity_type) {
 }
 
 /**
- * Helper function to get all text_or_entity fields potentially affected by
- * changes in entities of specified type and bundle.
+ * Helper function to get all text_or_entity fields affected by entity change.
  *
  * @param $entity_type
  *   Target entity type to look for in text_or_entity fields.
@@ -796,16 +801,20 @@ function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $rese
           $target_bundles = empty($target_bundles) ? array_keys(_text_or_entity_get_bundles_options($target_type)) : $target_bundles;
           foreach ($target_bundles as $target_bundle) {
             // Create new field_map entry.
-            if(!isset($field_map[0]))
+            if (!isset($field_map[0])) {
               $field_map[0] = array();
+            }
             array_push($field_map[0], $field_name);
-            if (!isset($field_map[$target_type]))
+            if (!isset($field_map[$target_type])) {
               $field_map[$target_type] = array();
-            if(!isset($field_map[$target_type][0]))
+            }
+            if (!isset($field_map[$target_type][0])) {
               $field_map[$target_type][0] = array();
+            }
             array_push($field_map[$target_type][0], $field_name);
-            if(!isset($field_map[$target_type][$target_bundle]))
+            if (!isset($field_map[$target_type][$target_bundle])) {
               $field_map[$target_type][$target_bundle] = array();
+            }
             array_push($field_map[$target_type][$target_bundle], $field_name);
           }
         }
@@ -813,14 +822,16 @@ function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $rese
       cache_set('text_or_entity:field_map', serialize($field_map));
     }
   }
-  if (!$entity_type)
+  if (!$entity_type) {
     return isset($field_map[0]) ? $field_map[0] : array();
+  }
   if (!isset($field_map[$entity_type])) {
     return array();
   }
-  if (!$entity_bundle)
+  if (!$entity_bundle) {
     return $field_map[$entity_type][0];
-  else if (!isset($field_map[$entity_type][$entity_bundle])) {
+  }
+  elseif (!isset($field_map[$entity_type][$entity_bundle])) {
     return array();
   }
   return $field_map[$entity_type][$entity_bundle];
@@ -830,7 +841,7 @@ function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $rese
  * Implements hook_entity_insert().
  */
 function text_or_entity_entity_insert($entity, $entity_type) {
-  list($entity_id,,$entity_bundle) = entity_extract_ids($entity_type, $entity);
+  list($entity_id, , $entity_bundle) = entity_extract_ids($entity_type, $entity);
   $fields = _text_or_entity_field_map($entity_type, $entity_bundle);
   foreach ($fields as $field_name) {
     $table_name = 'field_data_' . $field_name;
@@ -858,7 +869,7 @@ function text_or_entity_entity_insert($entity, $entity_type) {
  * Implements hook_entity_update().
  */
 function text_or_entity_entity_update($entity, $entity_type) {
-  list($entity_id,,$entity_bundle) = entity_extract_ids($entity_type, $entity);
+  list($entity_id, , $entity_bundle) = entity_extract_ids($entity_type, $entity);
   $fields = _text_or_entity_field_map($entity_type, $entity_bundle);
   foreach ($fields as $field_name) {
     $table_name = 'field_data_' . $field_name;
@@ -891,7 +902,7 @@ function text_or_entity_entity_update($entity, $entity_type) {
  * Implements hook_entity_delete().
  */
 function text_or_entity_entity_delete($entity, $entity_type) {
-  list($entity_id,,$entity_bundle) = entity_extract_ids($entity_type, $entity);
+  list($entity_id, , $entity_bundle) = entity_extract_ids($entity_type, $entity);
   $fields = _text_or_entity_field_map($entity_type, $entity_bundle);
   foreach ($fields as $field_name) {
     $table_name = 'field_data_' . $field_name;
