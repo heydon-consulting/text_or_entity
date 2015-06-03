@@ -666,7 +666,6 @@ function text_or_entity_query_field_data(array $field, array $instance, $string,
  *     'value' => 'Entity label',
  *     'target_id' => 10,
  *   ))
- * @throws \EntityMalformedException
  */
 function text_or_entity_query_entity_label(array $field, array $instance, $string, $exact) {
   // Only process non-empty string and text_or_entity fields.
