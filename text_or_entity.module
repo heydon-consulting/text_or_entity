@@ -84,7 +84,7 @@ function text_or_entity_field_validate($entity_type, $entity, $field, $instance,
       $target_entity = entity_load($target_type, array($item['target_id']));
       $target_entity = $target_entity[array_keys($target_entity)[0]];
       if (empty($target_entity)) {
-        // Invalid entity reference for target type, move along with an error.
+        // Invalid entity reference for target type, move along with error.
         $errors[$field['field_name']][$langcode][$delta][] = array(
           'error' => 'text_or_entity_invalid_target_type',
           'message' => t('Invalid @type reference (@id) for target type.',
@@ -97,22 +97,32 @@ function text_or_entity_field_validate($entity_type, $entity, $field, $instance,
       if (!empty($target_bundles)) {
         list(, , $entity_bundle) = entity_extract_ids($entity_type, $target_entity);
         if (!in_array($entity_bundle, $target_bundles)) {
-          // Invalid entity reference for target bundle(s), move along with an error.
+          // Invalid entity reference for target bundle, move along with error.
           $errors[$field['field_name']][$langcode][$delta][] = array(
             'error' => 'text_or_entity_invalid_target_bundle',
             'message' => t('Invalid @type reference (@id) bundle "@bundle".',
-              array('@type' => $target_type, '@id' => $item['target_id'], '@bundle' => $entity_bundle)),
+              array(
+                '@type' => $target_type,
+                '@id' => $item['target_id'],
+                '@bundle' => $entity_bundle,
+              )
+            ),
           );
         }
       }
       // Validate text value as matching label of referenced entity.
       $entity_label = entity_label($target_type, $target_entity);
       if ($empty_value) {
-        // Missing text value, move along with an error.
+        // Missing text value, move along with error.
         $errors[$field['field_name']][$langcode][$delta][] = array(
           'error' => 'text_or_entity_missing_value',
           'message' => t('Missing text value "@label" for @type reference (@id).',
-            array('@label' => $entity_label, '@type' => $target_type, '@id' => $item['target_id'])),
+            array(
+              '@label' => $entity_label,
+              '@type' => $target_type,
+              '@id' => $item['target_id'],
+            )
+          ),
         );
         continue;
       }
@@ -121,7 +131,13 @@ function text_or_entity_field_validate($entity_type, $entity, $field, $instance,
         $errors[$field['field_name']][$langcode][$delta][] = array(
           'error' => 'text_or_entity_invalid_value',
           'message' => t('Referenced @type "@label" (@id) does not match text value "@value".',
-            array('@type' => $target_type, '@label' => $entity_label, '@id' => $item['target_id'], '@value' => $item['value'])),
+            array(
+              '@type' => $target_type,
+              '@label' => $entity_label,
+              '@id' => $item['target_id'],
+              '@value' => $item['value'],
+            )
+          ),
         );
       }
     }
@@ -609,7 +625,7 @@ function text_or_entity_query_field_data($field, $instance, $string, $exact) {
     $query->condition($field_name . '_value', $string, '=');
   }
   else {
-    // Query for value containing or starting with $string
+    // Query for value containing or starting with $string.
     $needle = db_like($string) . '%';
     if ($match_operator == 'CONTAINS') {
       $needle = '%' . $needle;
@@ -860,7 +876,7 @@ function text_or_entity_entity_insert($entity, $entity_type) {
       ->execute()
       ->fetchAllKeyed();
     foreach ($source_ids as $source_id => $source_type) {
-      cache_clear_all('field:'.$source_type.':'.$source_id, 'cache_field');
+      cache_clear_all('field:' . $source_type . ':' . $source_id, 'cache_field');
     }
   }
 }
@@ -893,7 +909,7 @@ function text_or_entity_entity_update($entity, $entity_type) {
       ->execute()
       ->fetchAllKeyed();
     foreach ($source_ids as $source_id => $source_type) {
-      cache_clear_all('field:'.$source_type.':'.$source_id, 'cache_field');
+      cache_clear_all('field:' . $source_type . ':' . $source_id, 'cache_field');
     }
   }
 }
@@ -916,7 +932,7 @@ function text_or_entity_entity_delete($entity, $entity_type) {
       ->execute()
       ->fetchAllKeyed();
     foreach ($source_ids as $source_id => $source_type) {
-      cache_clear_all('field:'.$source_type.':'.$source_id, 'cache_field');
+      cache_clear_all('field:' . $source_type . ':' . $source_id, 'cache_field');
     }
     // Update target_id of fields matching entity label.
     db_update($table_name)
