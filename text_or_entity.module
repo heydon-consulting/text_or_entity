@@ -721,6 +721,74 @@ function _text_or_entity_resolve_entity_label_column($entity_type) {
 }
 
 /**
+ * Helper function to get all text_or_entity fields potentially affected by
+ * changes in entities of specified type and bundle.
+ *
+ * @param $entity_type
+ *   Target entity type to look for in text_or_entity fields.
+ *   Leave empty to get all text_or_entity fields.
+ * @param $entity_bundle
+ *   Target entity bundle to look for in text_or_entity fields.
+ *   Leave empty for all entity bundles of $entity_type.
+ * @param bool $reset_cache
+ *   If TRUE, rebuild static cache for $field_map.
+ *
+ * @return array
+ *   Array of potentially affected field names.
+ */
+function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $reset_cache = FALSE) {
+  static $field_map;
+
+  if (!isset($field_map) || $reset_cache) {
+    if (!$reset_cache && ($cache = cache_get('text_or_entity:field_map')) && !empty($cache->data)) {
+      $field_map = unserialize($cache->data);
+    }
+    else {
+      // Rebuild static cache for $field_map.
+      $field_map = array();
+      $fields = field_info_field_map();
+      foreach ($fields as $field_name => $field_info) {
+        // Only process text_or_entity fields.
+        if ($field_info['type'] == 'text_or_entity') {
+          $field = field_info_field($field_name);
+          $target_type = $field['settings']['entity_selection']['target_type'];
+          $target_bundles = $field['settings']['entity_selection']['target_bundles'];
+          $target_bundles = empty($target_bundles) ? array_keys(_text_or_entity_get_bundles_options($target_type)) : $target_bundles;
+          foreach ($target_bundles as $target_bundle) {
+            // Create new field_map entry.
+            if(!isset($field_map[0]))
+              $field_map[0] = array();
+            array_push($field_map[0], $field_name);
+            if (!isset($field_map[$target_type]))
+              $field_map[$target_type] = array();
+            if(!isset($field_map[$target_type][0]))
+              $field_map[$target_type][0] = array();
+            array_push($field_map[$target_type][0], $field_name);
+            if(!isset($field_map[$target_type][$target_bundle]))
+              $field_map[$target_type][$target_bundle] = array();
+            array_push($field_map[$target_type][$target_bundle], $field_name);
+          }
+        }
+      }
+      cache_set('text_or_entity:field_map', serialize($field_map));
+    }
+  }
+  if (!$entity_type)
+    return isset($field_map[0]) ? $field_map[0] : array();
+  if (!isset($field_map[$entity_type])) {
+    drupal_set_message(t('Invalid entity type \'@type\'', array('@type' => $entity_type)), 'warning');
+    return array();
+  }
+  if (!$entity_bundle)
+    return $field_map[$entity_type][0];
+  else if (!isset($field_map[$entity_type][$entity_bundle])) {
+    drupal_set_message(t('Invalid entity bundle \'@bundle\'', array('@bundle' => $entity_bundle)), 'warning');
+    return array();
+  }
+  return $field_map[$entity_type][$entity_bundle];
+}
+
+/**
  * Implements hook_views_api().
  */
 function text_or_entity_views_api() {
