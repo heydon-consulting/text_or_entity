@@ -951,6 +951,6 @@ function text_or_entity_entity_delete($entity, $entity_type) {
 function text_or_entity_views_api() {
   return array(
     'api' => 3,
-    'path' => drupal_get_path('module', 'text_or_entity') . '/views',
+    'path' => drupal_get_path('module', 'text_or_entity'),
   );
 }
