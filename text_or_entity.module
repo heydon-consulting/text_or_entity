@@ -735,6 +735,9 @@ function text_or_entity_query_entity_label(array $field, array $instance, $strin
     if (!empty($matching_entities[$entity_type])) {
       $matching_entities = entity_load($entity_type, array_keys($matching_entities[$entity_type]));
       foreach ($matching_entities as $entity) {
+        if (entity_access('view', $entity_type, $entity) === FALSE) {
+          continue;
+        }
         list($entity_id,,) = entity_extract_ids($entity_type, $entity);
         $entity_label = entity_label($entity_type, $entity);
         $matches[$entity_label] = array(
