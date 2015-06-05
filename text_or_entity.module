@@ -66,7 +66,7 @@ function text_or_entity_field_validate($base_type, $entity, $field, $instance, $
         continue;
       }
       // Missing entity reference for matching text value.
-      $matching_id = current($target_matches)[$item['value']]['target_id'];
+      $matching_id = reset($target_matches)[$item['value']]['target_id'];
       $errors[$field['field_name']][$langcode][$delta][] = array(
         'error' => 'text_or_entity_missing_target_id',
         'message' => t('Missing @type reference (@id) for matching text value "@value".',
@@ -81,7 +81,7 @@ function text_or_entity_field_validate($base_type, $entity, $field, $instance, $
     else {
       // Validate entity reference target type.
       $target_entity = entity_load($target_type, array($item['target_id']));
-      $target_entity = count($target_entity) ? current($target_entity) : NULL;
+      $target_entity = count($target_entity) ? reset($target_entity) : NULL;
       if (empty($target_entity)) {
         // Invalid entity reference for target type, move along with error.
         $errors[$field['field_name']][$langcode][$delta][] = array(
@@ -572,7 +572,7 @@ function text_or_entity_field_formatter_view($entity_type, $entity, $field, $ins
       if (isset($item['target_id']) && $item['target_id'] !== NULL && $display['settings']['link']) {
         $target_type = $field['settings']['entity_selection']['target_type'];
         $target_entity = entity_load($target_type, array($item['target_id']));
-        $target_entity = current($target_entity);
+        $target_entity = reset($target_entity);
         if (count($target_entity) && entity_access('view', $target_type, $target_entity)) {
           // Display as link to referenced entity.
           $target_uri = entity_uri($target_type, $target_entity);
@@ -962,4 +962,13 @@ function text_or_entity_views_api() {
     'api' => 3,
     'path' => drupal_get_path('module', 'text_or_entity'),
   );
+}
+
+/**
+ * Implements hook_ctools_plugin_api().
+ */
+function text_or_entity_ctools_plugin_api($owner, $api) {
+  if ($owner == 'feeds' && $api == 'plugins') {
+    return array('version' => 1);
+  }
 }
