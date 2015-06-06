@@ -573,7 +573,7 @@ function text_or_entity_field_formatter_view($entity_type, $entity, $field, $ins
         $target_type = $field['settings']['entity_selection']['target_type'];
         $target_entity = entity_load($target_type, array($item['target_id']));
         $target_entity = reset($target_entity);
-        if (count($target_entity) && entity_access('view', $target_type, $target_entity)) {
+        if (count($target_entity) && entity_access('view', $target_type, $target_entity) !== FALSE) {
           // Display as link to referenced entity.
           $target_uri = entity_uri($target_type, $target_entity);
           $elements[$delta] = array('#markup' => l($item['value'], $target_uri['path']));
