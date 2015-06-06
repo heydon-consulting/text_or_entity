@@ -18,7 +18,7 @@ function text_or_entity_feeds_processor_targets_alter(&$targets, $base_type, $ba
         'description' => t('The @label of the entity.', array('@label' => $instance['label'])),
         'real_target' => $field_name,
       );
-      $targets[$base_type . ':' . $base_bundle . ':' . $field_name . ':target_id'] = array(
+      $targets[$base_type . ':' . $field_name . ':target_id'] = array(
         'name' => t('@name: Target entity ID', array('@name' => $instance['label'])),
         'callback' => 'text_or_entity_feeds_set_target_id',
         'description' => t('The @label of the entity.', array('@label' => $instance['label'])),
@@ -29,36 +29,33 @@ function text_or_entity_feeds_processor_targets_alter(&$targets, $base_type, $ba
 }
 
 function text_or_entity_feeds_set_value($source, $entity, $target, $values, $mapping) {
-  drupal_set_message('Value');
   list($base_type, $base_bundle, $field_name, $column) = explode(':', $target . ':value');
-  $language = $entity->language;
+  $language = isset($mapping['language']) ? $mapping['language'] : LANGUAGE_NONE;
   $field_data = isset($entity->$target) ? $entity->$target : array($language => array());
   $field = field_info_field($field_name);
   $instance = field_info_instance($base_type, $field_name, $base_bundle);
-  $target_type = $field['settings']['entity_selection']['target_type'];
-  $target_bundles = $field['settings']['entity_selection']['target_bundles'];
-  $target_info = field_info_field($field_name);
 
   // Iterate over all values.
-  $delta = 0;
   if (!is_array($values)) {
     $values = array($values);
   }
+  $delta = 0;
   foreach ($values as $value) {
     if (is_object($value) && $value instanceof FeedsElement) {
       $value = $value->getValue();
     }
     if (is_scalar($value) && strlen($value)) {
-      // Set text value.
+      // Set text value / entity label.
       $field_data[$language][$delta]['value'] = (string) $value;
+      // Set target_id if entity with matching label exists.
+      $target_entity = text_or_entity_query_entity_label($field, $instance, $value, TRUE);
+      $target_entity = count($target_entity) ? reset($target_entity) : NULL;
+      $target_id = isset($target_entity['target_id']) ? $target_entity['target_id'] : NULL;
+      $field_data[$language][$delta]['target_id'] = $target_id;
       // Set base_type.
       $field_data[$language][$delta]['base_type'] = $base_type;
-      // Set target_id if matching entity exists.
-      $target_entity = text_or_entity_query_entity_label($field, $instance, $value, TRUE);
-      $target_id = count($target_entity) ? reset($target_entity)['target_id'] : NULL;
-      $field_data[$language][$delta]['target_id'] = $target_id;
     }
-    if ($target_info['cardinality'] == 1) {
+    if ($field['cardinality'] == 1) {
       break;
     }
     $delta++;
@@ -68,21 +65,18 @@ function text_or_entity_feeds_set_value($source, $entity, $target, $values, $map
 }
 
 function text_or_entity_feeds_set_target_id($source, $entity, $target, $values, $mapping) {
-  drupal_set_message('Target ID');
-  list($base_type, $base_bundle, $field_name, $column) = explode(':', $target . ':value');
-  $language = $entity->language;
+  list($base_type, $field_name, $column) = explode(':', $target . ':value');
+  $language = isset($mapping['language']) ? $mapping['language'] : LANGUAGE_NONE;
   $field_data = isset($entity->$target) ? $entity->$target : array($language => array());
   $field = field_info_field($field_name);
-  $instance = field_info_instance($base_type, $field_name, $base_bundle);
   $target_type = $field['settings']['entity_selection']['target_type'];
   $target_bundles = $field['settings']['entity_selection']['target_bundles'];
-  $target_info = field_info_field($field_name);
 
   // Iterate over all values.
-  $delta = 0;
   if (!is_array($values)) {
     $values = array($values);
   }
+  $delta = 0;
   foreach ($values as $target_id) {
     if (is_object($target_id) && $target_id instanceof FeedsElement) {
       $target_id = $target_id->getValue();
@@ -92,7 +86,14 @@ function text_or_entity_feeds_set_target_id($source, $entity, $target, $values, 
       $target_entity = entity_load($target_type, array($target_id));
       $target_entity = count($target_entity) ? reset($target_entity) : NULL;
       if (empty($target_entity)) {
-        // Make sure we get a second chance to import this target_id.
+        // Invalid target_id for configured target type.
+        unset($entity->feeds_item->hash);
+        continue;
+      }
+      $wrapper = entity_metadata_wrapper($target_type, $target_id);
+      $target_bundle = $wrapper->getBundle();
+      if (!empty($target_bundles) && !in_array($target_bundle, $target_bundles)) {
+        // Invalid target_id for configured target bundles.
         unset($entity->feeds_item->hash);
         continue;
       }
@@ -104,7 +105,7 @@ function text_or_entity_feeds_set_target_id($source, $entity, $target, $values, 
       $target_label = entity_label($target_type, $target_entity);
       $field_data[$language][$delta]['value'] = $target_label;
     }
-    if ($target_info['cardinality'] == 1) {
+    if ($field['cardinality'] == 1) {
       break;
     }
     $delta++;
