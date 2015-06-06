@@ -802,7 +802,6 @@ function _text_or_entity_resolve_entity_label_column($entity_type) {
  *   Array of potentially affected field names.
  */
 function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $reset_cache = FALSE) {
-  static $field_map;
   // Field map has following structure:
   //  array(
   //    0 => array(), // All text_or_entity field names.
@@ -811,6 +810,8 @@ function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $rese
   //      'target_bundle' => array(), // All field names of target type/bundle.
   //    ),
   //  );
+  static $field_map;
+
 
   if (!isset($field_map) || $reset_cache) {
     if (!$reset_cache && ($cache = cache_get('text_or_entity:field_map')) && !empty($cache->data)) {

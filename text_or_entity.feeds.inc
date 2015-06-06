@@ -29,7 +29,7 @@ function text_or_entity_feeds_processor_targets_alter(&$targets, $base_type, $ba
 }
 
 function text_or_entity_feeds_set_value($source, $entity, $target, $values, $mapping) {
-  list($base_type, $base_bundle, $field_name, $column) = explode(':', $target . ':value');
+  list($base_type, $base_bundle, $field_name, ) = explode(':', $target . ':value');
   $language = isset($mapping['language']) ? $mapping['language'] : LANGUAGE_NONE;
   $field_data = isset($entity->$target) ? $entity->$target : array($language => array());
   $field = field_info_field($field_name);
@@ -65,7 +65,7 @@ function text_or_entity_feeds_set_value($source, $entity, $target, $values, $map
 }
 
 function text_or_entity_feeds_set_target_id($source, $entity, $target, $values, $mapping) {
-  list($base_type, $field_name, $column) = explode(':', $target . ':value');
+  list($base_type, $field_name, ) = explode(':', $target . ':value');
   $language = isset($mapping['language']) ? $mapping['language'] : LANGUAGE_NONE;
   $field_data = isset($entity->$target) ? $entity->$target : array($language => array());
   $field = field_info_field($field_name);
