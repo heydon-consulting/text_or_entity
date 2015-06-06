@@ -739,7 +739,7 @@ function text_or_entity_query_entity_label(array $field, array $instance, $strin
         if (entity_access('view', $target_type, $target_entity) === FALSE) {
           continue;
         }
-        list($target_id, , ) = entity_extract_ids($target_type, $target_entity);
+        list($target_id, ,) = entity_extract_ids($target_type, $target_entity);
         $target_label = entity_label($target_type, $target_entity);
         $matches[$target_label] = array(
           'value' => $target_label,
@@ -789,6 +789,15 @@ function _text_or_entity_resolve_entity_label_column($entity_type) {
 /**
  * Helper function to get all text_or_entity fields affected by entity change.
  *
+ * Field map has following structure:
+ * array(
+ *   0 => array(), // All text_or_entity field names.
+ *   'target_type' => array(
+ *     0 => array(), // All field names of target type.
+ *     'target_bundle' => array(), // All field names of target type/bundle.
+ *   ),
+ * );
+ *
  * @param string $entity_type
  *   Target entity type to look for in text_or_entity fields.
  *   Leave empty to get all text_or_entity fields.
@@ -802,16 +811,7 @@ function _text_or_entity_resolve_entity_label_column($entity_type) {
  *   Array of potentially affected field names.
  */
 function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $reset_cache = FALSE) {
-  // Field map has following structure:
-  //  array(
-  //    0 => array(), // All text_or_entity field names.
-  //    'target_type' => array(
-  //      0 => array(), // All field names of target type.
-  //      'target_bundle' => array(), // All field names of target type/bundle.
-  //    ),
-  //  );
   static $field_map;
-
 
   if (!isset($field_map) || $reset_cache) {
     if (!$reset_cache && ($cache = cache_get('text_or_entity:field_map')) && !empty($cache->data)) {
