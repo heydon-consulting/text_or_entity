@@ -12,6 +12,7 @@
  *   - max_length: maximum length for varchar text value.
  *   - target_type: specific type of target entity.
  *   - target_bundles: specific bundle(s) of target entity.
+ *   - target_roles: specific role(s) of target user entity.
  */
 function text_or_entity_field_info() {
   return array(
@@ -716,7 +717,7 @@ function text_or_entity_query_entity_label(array $field, array $instance, $strin
   $widget = $instance['widget'];
   $match_operator = $widget['settings']['match_operator'];
   $limit = $widget['settings']['limit'];
-  // Target entity type and bundles for that field.
+  // Target entity type, bundle(s) and role(s) for that field.
   $target_type = $field['settings']['entity_selection']['target_type'];
   $target_bundles = $field['settings']['entity_selection']['target_bundles'];
   $target_roles = $field['settings']['entity_selection']['target_roles'];
@@ -888,13 +889,16 @@ function text_or_entity_query_realnamerolesquery_alter(QueryAlterableInterface $
  * @param string $entity_bundle
  *   Target entity bundle to look for in text_or_entity fields.
  *   Leave empty for all entity bundles of $entity_type.
+ * @param array $user_entity_roles
+ *   Target user role(s) to look for in text_or_entity fields.
+ *   Leave empty for all user roles.
  * @param bool $reset_cache
  *   If TRUE, rebuild static cache for $field_map.
  *
  * @return array
  *   Array of potentially affected field names.
  */
-function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $reset_cache = FALSE) {
+function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $user_entity_roles = array(), $reset_cache = FALSE) {
   static $field_map;
 
   if (!isset($field_map) || $reset_cache) {
@@ -910,26 +914,37 @@ function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $rese
         if ($field_info['type'] == 'text_or_entity') {
           $field = field_info_field($field_name);
           $target_type = $field['settings']['entity_selection']['target_type'];
+          // Create new field_map entry for entity type.
+          if (!isset($field_map[0])) {
+            $field_map[0] = array();
+          }
+          array_push($field_map[0], $field_name);
+          if (!isset($field_map[$target_type])) {
+            $field_map[$target_type] = array();
+          }
+          if (!isset($field_map[$target_type][0])) {
+            $field_map[$target_type][0] = array();
+          }
+          array_push($field_map[$target_type][0], $field_name);
+          // Create new field_map entry for entity bundle(s).
           $target_bundles = $field['settings']['entity_selection']['target_bundles'];
           $target_bundles = empty($target_bundles) ? array_keys(_text_or_entity_get_bundles_options($target_type)) : $target_bundles;
-          // TODO: Add fields based on target role(s) for user entity.
           foreach ($target_bundles as $target_bundle) {
-            // Create new field_map entry.
-            if (!isset($field_map[0])) {
-              $field_map[0] = array();
-            }
-            array_push($field_map[0], $field_name);
-            if (!isset($field_map[$target_type])) {
-              $field_map[$target_type] = array();
-            }
-            if (!isset($field_map[$target_type][0])) {
-              $field_map[$target_type][0] = array();
-            }
-            array_push($field_map[$target_type][0], $field_name);
             if (!isset($field_map[$target_type][$target_bundle])) {
               $field_map[$target_type][$target_bundle] = array();
             }
             array_push($field_map[$target_type][$target_bundle], $field_name);
+          }
+          // Create new field_map entry for user entity role(s).
+          if ($target_type == 'user') {
+            $target_roles = $field['settings']['entity_selection']['target_roles'];
+            $target_roles = empty($target_roles) ? array_keys(user_roles(TRUE)) : $target_roles;
+            foreach ($target_roles as $target_role) {
+              if (!isset($field_map[$target_type][$target_role])) {
+                $field_map[$target_type][$target_role] = array();
+              }
+              array_push($field_map[$target_type][$target_role], $field_name);
+            }
           }
         }
       }
@@ -942,13 +957,28 @@ function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $rese
   if (!isset($field_map[$entity_type])) {
     return array();
   }
-  if (!$entity_bundle) {
-    return $field_map[$entity_type][0];
+  if ($entity_type != 'user') {
+    if (!$entity_bundle) {
+      return $field_map[$entity_type][0];
+    }
+    elseif (!isset($field_map[$entity_type][$entity_bundle])) {
+      return array();
+    }
+    return $field_map[$entity_type][$entity_bundle];
   }
-  elseif (!isset($field_map[$entity_type][$entity_bundle])) {
-    return array();
+  else {
+    if (!count($user_entity_roles)) {
+      return $field_map[$entity_type][0];
+    }
+    $result = array();
+    foreach ($user_entity_roles as $user_entity_role) {
+      if (isset($field_map[$entity_type][$user_entity_role])) {
+        $result = array_merge($result, $field_map[$entity_type][$user_entity_role]);
+      }
+    }
+    return $result;
   }
-  return $field_map[$entity_type][$entity_bundle];
+  return array();
 }
 
 /**
@@ -956,8 +986,13 @@ function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $rese
  */
 function text_or_entity_entity_insert($target_entity, $target_type) {
   list($target_id, , $target_bundle) = entity_extract_ids($target_type, $target_entity);
-  // TODO: Get fields from target_roles instead of target_bundles if user entity.
-  $fields = _text_or_entity_field_map($target_type, $target_bundle);
+  if ($target_type != 'user') {
+    $fields = _text_or_entity_field_map($target_type, $target_bundle);
+  }
+  else {
+    $target_roles = array_keys($target_entity->roles);
+    $fields = _text_or_entity_field_map($target_type, '', $target_roles);
+  }
   foreach ($fields as $field_name) {
     $table_name = 'field_data_' . $field_name;
     $target_id_column = $field_name . '_target_id';
@@ -985,8 +1020,13 @@ function text_or_entity_entity_insert($target_entity, $target_type) {
  */
 function text_or_entity_entity_update($target_entity, $target_type) {
   list($target_id, , $target_bundle) = entity_extract_ids($target_type, $target_entity);
-  // TODO: Get fields from target_roles instead of target_bundles if user entity.
-  $fields = _text_or_entity_field_map($target_type, $target_bundle);
+  if ($target_type != 'user') {
+    $fields = _text_or_entity_field_map($target_type, $target_bundle);
+  }
+  else {
+    $target_roles = array_keys($target_entity->roles);
+    $fields = _text_or_entity_field_map($target_type, '', $target_roles);
+  }
   foreach ($fields as $field_name) {
     $table_name = 'field_data_' . $field_name;
     $target_id_column = $field_name . '_target_id';
@@ -1019,8 +1059,13 @@ function text_or_entity_entity_update($target_entity, $target_type) {
  */
 function text_or_entity_entity_delete($target_entity, $target_type) {
   list($target_id, , $target_bundle) = entity_extract_ids($target_type, $target_entity);
-  // TODO: Get fields from target_roles instead of target_bundles if user entity.
-  $fields = _text_or_entity_field_map($target_type, $target_bundle);
+  if ($target_type != 'user') {
+    $fields = _text_or_entity_field_map($target_type, $target_bundle);
+  }
+  else {
+    $target_roles = array_keys($target_entity->roles);
+    $fields = _text_or_entity_field_map($target_type, '', $target_roles);
+  }
   foreach ($fields as $field_name) {
     $table_name = 'field_data_' . $field_name;
     $target_id_column = $field_name . '_target_id';
