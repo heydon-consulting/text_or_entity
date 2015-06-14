@@ -10,6 +10,8 @@ Features
 
 - Allowed entity type / bundles and maximum length of text value are configured
   in field settings.
+- User entity selection can be based on target user role(s) in addition to
+  entity type and bundle(s).
 - Autocomplete widget combines results based on previously entered text values
   and labels of allowed entity references. Limit on the number of suggestions
   and match operator (starts with / contains) are configured in widget settings.
