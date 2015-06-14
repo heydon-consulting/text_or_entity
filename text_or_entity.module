@@ -278,7 +278,7 @@ function _text_or_entity_field_settings_validate($form, &$form_state) {
   }
   $form_state['text_or_entity']['field'] = $field;
   // Flush Text or Entity field map cache.
-  _text_or_entity_field_map(TRUE);
+  _text_or_entity_field_map('', '', array(), TRUE);
 }
 
 /**
@@ -918,14 +918,18 @@ function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $user
           if (!isset($field_map[0])) {
             $field_map[0] = array();
           }
-          array_push($field_map[0], $field_name);
+          if (!in_array($field_name, $field_map[0])) {
+            array_push($field_map[0], $field_name);
+          }
           if (!isset($field_map[$target_type])) {
             $field_map[$target_type] = array();
           }
           if (!isset($field_map[$target_type][0])) {
             $field_map[$target_type][0] = array();
           }
-          array_push($field_map[$target_type][0], $field_name);
+          if (!in_array($field_name, $field_map[$target_type][0])) {
+            array_push($field_map[$target_type][0], $field_name);
+          }
           // Create new field_map entry for entity bundle(s).
           $target_bundles = $field['settings']['entity_selection']['target_bundles'];
           $target_bundles = empty($target_bundles) ? array_keys(_text_or_entity_get_bundles_options($target_type)) : $target_bundles;
@@ -933,7 +937,9 @@ function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $user
             if (!isset($field_map[$target_type][$target_bundle])) {
               $field_map[$target_type][$target_bundle] = array();
             }
-            array_push($field_map[$target_type][$target_bundle], $field_name);
+            if (!in_array($field_name, $field_map[$target_type][$target_bundle])) {
+              array_push($field_map[$target_type][$target_bundle], $field_name);
+            }
           }
           // Create new field_map entry for user entity role(s).
           if ($target_type == 'user') {
@@ -943,7 +949,9 @@ function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $user
               if (!isset($field_map[$target_type][$target_role])) {
                 $field_map[$target_type][$target_role] = array();
               }
-              array_push($field_map[$target_type][$target_role], $field_name);
+              if (!in_array($field_name, $field_map[$target_type][$target_role])) {
+                array_push($field_map[$target_type][$target_role], $field_name);
+              }
             }
           }
         }
