@@ -23,6 +23,7 @@ function text_or_entity_field_info() {
         'entity_selection' => array(
           'target_type' => 'node',
           'target_bundles' => array(),
+          'target_roles' => array(),
         ),
       ),
       'instance_settings' => array(
@@ -109,6 +110,23 @@ function text_or_entity_field_validate($base_type, $entity, $field, $instance, $
           );
         }
       }
+      // Validate user entity reference target role(s).
+      $target_roles = array_filter($field['settings']['entity_selection']['target_roles']);
+      if ($target_type == 'user' && !empty($target_roles)) {
+        $matching_roles = array_intersect($target_roles, array_keys($target_entity->roles));
+        if (!count($matching_roles)) {
+          // Invalid entity reference for target bundle, move along with error.
+          $errors[$field['field_name']][$langcode][$delta][] = array(
+            'error' => 'text_or_entity_invalid_target_role',
+            'message' => t('Invalid user reference (@id) role(s) "@roles".',
+              array(
+                '@id' => $item['target_id'],
+                '@roles' => implode('/', $target_roles),
+              )
+            ),
+          );
+        }
+      }
       // Validate text value as matching label of referenced entity.
       $target_label = entity_label($target_type, $target_entity);
       if ($empty_value) {
@@ -184,12 +202,13 @@ function _text_or_entity_field_settings_process($form, $form_state) {
     '#type' => 'fieldset',
     '#title' => t('Entity selection'),
   );
-  $target_entity_type = $field['settings']['entity_selection']['target_type'];
+  // Select target entity type.
+  $target_type = $field['settings']['entity_selection']['target_type'];
   $form['entity_selection']['target_type'] = array(
     '#type' => 'select',
     '#title' => t('Target type'),
     '#options' => _text_or_entity_get_entity_type_options(),
-    '#default_value' => $target_entity_type,
+    '#default_value' => $target_type,
     '#description' => t('The entity type that can be referenced through this field.'),
     '#disabled' => $has_data,
     '#size' => 1,
@@ -198,13 +217,14 @@ function _text_or_entity_field_settings_process($form, $form_state) {
       'wrapper' => 'text-or-entity-field-settings',
     ),
   );
-  $target_info = entity_get_info($target_entity_type);
+  // Checkboxes for target entity bundle(s).
+  $target_info = entity_get_info($target_type);
   if (!empty($target_info['entity keys']['bundle'])) {
     // Bundles options for that entity type.
     $form['entity_selection']['target_bundles'] = array(
       '#type' => 'checkboxes',
       '#title' => t('Target bundles'),
-      '#options' => _text_or_entity_get_bundles_options($target_entity_type),
+      '#options' => _text_or_entity_get_bundles_options($target_type),
       '#default_value' => $field['settings']['entity_selection']['target_bundles'],
       '#description' => t('The bundles of the entity type that can be referenced. Optional, leave empty for all bundles.'),
       '#disabled' => $has_data,
@@ -213,6 +233,24 @@ function _text_or_entity_field_settings_process($form, $form_state) {
   else {
     // Entity doesn't have bundles.
     $form['entity_selection']['target_bundles'] = array(
+      '#type' => 'hidden',
+      '#value' => array(),
+    );
+  }
+  // Checkboxes for target user entity role(s).
+  if ($target_type == 'user') {
+    $form['entity_selection']['target_roles'] = array(
+      '#type' => 'checkboxes',
+      '#title' => t('Target user role(s)'),
+      '#options' => user_roles(TRUE),
+      '#default_value' => $field['settings']['entity_selection']['target_roles'],
+      '#description' => t('The role(s) of the user entity that can be referenced. Optional, leave empty for all roles.'),
+      '#disabled' => $has_data,
+    );
+  }
+  else {
+    // Entity doesn't have roles (not user).
+    $form['entity_selection']['target_roles'] = array(
       '#type' => 'hidden',
       '#value' => array(),
     );
@@ -681,6 +719,7 @@ function text_or_entity_query_entity_label(array $field, array $instance, $strin
   // Target entity type and bundles for that field.
   $target_type = $field['settings']['entity_selection']['target_type'];
   $target_bundles = $field['settings']['entity_selection']['target_bundles'];
+  $target_roles = $field['settings']['entity_selection']['target_roles'];
   $matches = array();
 
   if ($target_type == 'user' && module_exists('realname')) {
@@ -699,6 +738,11 @@ function text_or_entity_query_entity_label(array $field, array $instance, $strin
       }
       $query->condition('realname', $needle, 'LIKE');
     }
+    // Target role(s) realname join / condition.
+    if (!empty($target_roles)) {
+      $query->addTag('realnamerolesquery');
+      $query->addMetaData('roles', $target_roles);
+    }
     $query->groupBy('uid')
       ->orderBy('realname')
       ->range(0, $limit);
@@ -714,10 +758,18 @@ function text_or_entity_query_entity_label(array $field, array $instance, $strin
   else {
     // Query the database to see which entities match.
     $query = new EntityFieldQuery();
+    // Target type condition.
     $query->entityCondition('entity_type', $target_type);
+    // Target bundles condition.
     if (!empty($target_bundles)) {
       $query->entityCondition('bundle', $target_bundles, "IN");
     }
+    // Target role(s) users join / condition.
+    if ($target_type == 'user' && !empty($target_roles)) {
+      $query->addTag('usersrolesquery');
+      $query->addMetaData('roles', $target_roles);
+    }
+    // Entity label condition.
     $label_column = _text_or_entity_resolve_entity_label_column($target_type);
     if ($exact) {
       $query->propertyCondition($label_column, $string, '=');
@@ -787,14 +839,46 @@ function _text_or_entity_resolve_entity_label_column($entity_type) {
 }
 
 /**
+ * Implements hook_query_TAG_alter().
+ */
+function text_or_entity_query_usersrolesquery_alter(QueryAlterableInterface $query) {
+  $roles = array_filter($query->getMetaData('roles'));
+
+  $role_subquery = db_select("role", "role");
+  $role_subquery->condition('role.rid', $roles, 'IN');
+  $role_subquery->join('users_roles', "users_to_include", "role.rid = users_to_include.rid");
+  $role_subquery->fields('users_to_include', array('uid' => 'uid'));
+  $role_subquery->where('users_to_include.uid = users.uid');
+  $query->exists($role_subquery);
+}
+
+/**
+ * Implements hook_query_TAG_alter().
+ */
+function text_or_entity_query_realnamerolesquery_alter(QueryAlterableInterface $query) {
+  $roles = array_filter($query->getMetaData('roles'));
+
+  $role_subquery = db_select("role", "role");
+  $role_subquery->condition('role.rid', $roles, 'IN');
+  $role_subquery->join('users_roles', "users_to_include", "role.rid = users_to_include.rid");
+  $role_subquery->fields('users_to_include', array('uid' => 'uid'));
+  $role_subquery->where('users_to_include.uid = realname.uid');
+  $query->exists($role_subquery);
+}
+
+/**
  * Helper function to get all text_or_entity fields affected by entity change.
  *
  * Field map has following structure:
  * array(
- *   0 => array(), // All text_or_entity field names.
+ *   0 => array(), // All text_or_entity fields.
  *   'target_type' => array(
- *     0 => array(), // All field names of target type.
- *     'target_bundle' => array(), // All field names of target type/bundle.
+ *     0 => array(), // All fields referring to target type.
+ *     'target_bundle' => array(), // All fields referring to target bundle.
+ *   ),
+ *   'user' => array(
+ *     0 => array(), // All fields referring to user entities.
+ *     'rid' => array(), // All fields referring to target role(s).
  *   ),
  * );
  *
@@ -828,6 +912,7 @@ function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $rese
           $target_type = $field['settings']['entity_selection']['target_type'];
           $target_bundles = $field['settings']['entity_selection']['target_bundles'];
           $target_bundles = empty($target_bundles) ? array_keys(_text_or_entity_get_bundles_options($target_type)) : $target_bundles;
+          // TODO: Add fields based on target role(s) for user entity.
           foreach ($target_bundles as $target_bundle) {
             // Create new field_map entry.
             if (!isset($field_map[0])) {
@@ -871,6 +956,7 @@ function _text_or_entity_field_map($entity_type = '', $entity_bundle = '', $rese
  */
 function text_or_entity_entity_insert($target_entity, $target_type) {
   list($target_id, , $target_bundle) = entity_extract_ids($target_type, $target_entity);
+  // TODO: Get fields from target_roles instead of target_bundles if user entity.
   $fields = _text_or_entity_field_map($target_type, $target_bundle);
   foreach ($fields as $field_name) {
     $table_name = 'field_data_' . $field_name;
@@ -899,6 +985,7 @@ function text_or_entity_entity_insert($target_entity, $target_type) {
  */
 function text_or_entity_entity_update($target_entity, $target_type) {
   list($target_id, , $target_bundle) = entity_extract_ids($target_type, $target_entity);
+  // TODO: Get fields from target_roles instead of target_bundles if user entity.
   $fields = _text_or_entity_field_map($target_type, $target_bundle);
   foreach ($fields as $field_name) {
     $table_name = 'field_data_' . $field_name;
@@ -932,6 +1019,7 @@ function text_or_entity_entity_update($target_entity, $target_type) {
  */
 function text_or_entity_entity_delete($target_entity, $target_type) {
   list($target_id, , $target_bundle) = entity_extract_ids($target_type, $target_entity);
+  // TODO: Get fields from target_roles instead of target_bundles if user entity.
   $fields = _text_or_entity_field_map($target_type, $target_bundle);
   foreach ($fields as $field_name) {
     $table_name = 'field_data_' . $field_name;
