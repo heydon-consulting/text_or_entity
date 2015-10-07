@@ -720,7 +720,7 @@ function text_or_entity_query_entity_label(array $field, array $instance, $strin
   // Target entity type, bundle(s) and role(s) for that field.
   $target_type = $field['settings']['entity_selection']['target_type'];
   $target_bundles = $field['settings']['entity_selection']['target_bundles'];
-  $target_roles = $field['settings']['entity_selection']['target_roles'];
+  $target_roles = array_filter($field['settings']['entity_selection']['target_roles']);
   $matches = array();
 
   if ($target_type == 'user' && module_exists('realname')) {
