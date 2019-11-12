@@ -1,0 +1,31 @@
+field.storage_settings.text_or_entity_reference:
+  type: mapping
+  label: 'Text or entity reference field storage settings'
+  mapping:
+    max_length:
+      type: int
+      label: Maximum text length
+    target_type:
+      type: string
+      label: 'Type of item to reference'
+
+field.field_settings.text_or_entity_reference:
+  type: mapping
+  label: 'Text or entity reference field settings'
+  mapping:
+    handler:
+      type: string
+      label: 'Reference method'
+    handler_settings:
+      type: entity_reference_selection.[%parent.handler]
+      label: 'Entity reference selection plugin settings'
+
+field.value.text_or_entity_reference:
+  type: mapping
+  label: 'Default value'
+  mapping:
+    target_uuid:
+      type: uuid
+    text:
+      type: string
+      label: 'Text value'

@@ -1,0 +1,5 @@
+name: Text or Entity
+type: module
+description: Provides a field that can reference entities or just store text.
+core: 8.x
+package: Fields
