@@ -3,7 +3,7 @@ field.storage_settings.text_or_entity_reference:
   label: 'Text or entity reference field storage settings'
   mapping:
     max_length:
-      type: int
+      type: integer
       label: Maximum text length
     target_type:
       type: string
