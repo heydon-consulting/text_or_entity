@@ -169,7 +169,7 @@ class TextOrEntityReferenceItem extends EntityReferenceItem {
    * {@inheritdoc}
    */
   public function preSave() {
-    if (!$this->isEmpty() && $this->target_id === NULL && empty($this->text)) {
+    if (!$this->isEmpty() && $this->target_id === NULL && empty($this->text) && $this->entity) {
       $this->target_id = $this->entity->id();
     }
   }
