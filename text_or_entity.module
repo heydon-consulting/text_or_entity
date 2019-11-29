@@ -17,35 +17,27 @@ use Drupal\Core\Entity\EntityInterface;
 function text_or_entity_entity_delete(EntityInterface $entity) {
   $label = $entity->label();
   $target_type = $entity->getEntityTypeId();
-  $field_config_storage = \Drupal::entityTypeManager()->getStorage('field_config');
-  $field_config_ids = $field_config_storage
-    ->getQuery()
-    ->condition('field_type', 'text_or_entity_reference')
-    ->execute();
-  if ($field_config_ids) {
-    $field_configs = $field_config_storage->loadMultiple($field_config_ids);
-    foreach ($field_configs as $field_config) {
-      $settings = $field_config->get('settings');
-      if ($settings['handler'] === 'default:' . $target_type) {
-        $field_name = $field_config->get('field_name');
-        $referencing_entity_type = $field_config->get('entity_type');
-        $referencing_entity_storage = \Drupal::entityTypeManager()->getStorage($referencing_entity_type);
-        $referencing_entity_ids = $referencing_entity_storage
-          ->getQuery()
-          ->condition($field_name . '.target_id', $entity->id())
-          ->execute();
-        if ($referencing_entity_ids) {
-          $referencing_entities = $referencing_entity_storage->loadMultiple($referencing_entity_ids);
-          /** @var \Drupal\Core\Entity\ContentEntityInterface $referencing_entity */
-          foreach ($referencing_entities as $referencing_entity) {
-            /** @var \Drupal\text_or_entity\Plugin\Field\TextOrEntityReferenceFieldItemList $field_items */
-            $field_items = $referencing_entity->get($field_name);
-            foreach ($field_items as $delta => $item) {
-              if (!empty($item->target_id) && $item->target_id == $entity->id()) {
-                $value = $field_items->set($delta, ['text' => $label])->getValue();
-                $referencing_entity->set($field_name, $value);
-                $referencing_entity->save();
-              }
+  $bundle = $entity->bundle();
+  $field_configs = text_or_entity_get_field_configs($target_type, $bundle);
+  if ($field_configs) {
+    foreach ($field_configs as $field_name => $field_config) {
+      $referencing_entity_type = $field_config->get('entity_type');
+      $referencing_entity_storage = \Drupal::entityTypeManager()->getStorage($referencing_entity_type);
+      $referencing_entity_ids = $referencing_entity_storage
+        ->getQuery()
+        ->condition($field_name . '.target_id', $entity->id())
+        ->execute();
+      if ($referencing_entity_ids) {
+        $referencing_entities = $referencing_entity_storage->loadMultiple($referencing_entity_ids);
+        /** @var \Drupal\Core\Entity\ContentEntityInterface $referencing_entity */
+        foreach ($referencing_entities as $referencing_entity) {
+          /** @var \Drupal\text_or_entity\Plugin\Field\TextOrEntityReferenceFieldItemList $field_items */
+          $field_items = $referencing_entity->get($field_name);
+          foreach ($field_items as $delta => $item) {
+            if (!empty($item->target_id) && $item->target_id == $entity->id()) {
+              $value = $field_items->set($delta, ['text' => $label])->getValue();
+              $referencing_entity->set($field_name, $value);
+              $referencing_entity->save();
             }
           }
         }
@@ -58,15 +50,17 @@ function text_or_entity_entity_delete(EntityInterface $entity) {
  * Implements hook_entity_presave().
  */
 function text_or_entity_entity_presave(EntityInterface $entity) {
-  // If an entity exists with a label of the field's text property value, let's
-  // switch to using the target_id property itself.
+  // If $entity references another entity through text, let's  switch to using
+  // the target_id property.
+  $entity_type_id = $entity->getEntityTypeId();
+  $bundle = $entity->bundle();
   if ($entity instanceof ContentEntityInterface) {
     $field_config_storage = \Drupal::entityTypeManager()->getStorage('field_config');
     $field_config_ids = $field_config_storage->getQuery()
       ->condition('field_type', 'text_or_entity_reference')
-      ->condition('entity_type', $entity->getEntityTypeId())
-      ->condition('bundle', $entity->bundle())
-      ->execute();
+      ->condition('entity_type', $entity_type_id)
+      ->condition('bundle', $bundle)
+    ->execute();
     $field_configs = $field_config_storage->loadMultiple($field_config_ids);
     if ($field_config_ids) {
       foreach ($field_configs as $field_config) {
@@ -97,4 +91,90 @@ function text_or_entity_entity_presave(EntityInterface $entity) {
       }
     }
   }
+}
+
+/**
+ * Implements hook_entity_insert().
+ */
+function text_or_entity_entity_insert(EntityInterface $entity) {
+  text_or_entity_postsave($entity);
+}
+
+/**
+ * Implements hook_entity_update().
+ */
+function text_or_entity_entity_update(EntityInterface $entity) {
+  text_or_entity_postsave($entity);
+}
+
+/**
+ * Switch text references to target_id ones on referenced entity save.
+ *
+ * @param \Drupal\Core\Entity\EntityInterface $entity
+ *   The entity being saved.
+ */
+function text_or_entity_postsave(EntityInterface $entity) {
+  // Change to the target_id property when $entity is referenced via a
+  // text_or_entity field's text property.
+  $label = $entity->label();
+  $entity_type_id = $entity->getEntityTypeId();
+  $bundle = $entity->bundle();
+  $field_configs = text_or_entity_get_field_configs($entity_type_id, $bundle);
+  if ($field_configs) {
+    foreach ($field_configs as $field_name => $field_config) {
+      $referencing_entity_type = $field_config->get('entity_type');
+      $referencing_entity_storage = \Drupal::entityTypeManager()->getStorage($referencing_entity_type);
+      $referencing_entity_ids = $referencing_entity_storage
+        ->getQuery()
+        ->condition($field_name . '.text', $label)
+        ->execute();
+      if ($referencing_entity_ids) {
+        $referencing_entities = $referencing_entity_storage->loadMultiple($referencing_entity_ids);
+        /** @var \Drupal\Core\Entity\ContentEntityInterface $referencing_entity */
+        foreach ($referencing_entities as $referencing_entity) {
+          /** @var \Drupal\text_or_entity\Plugin\Field\TextOrEntityReferenceFieldItemList $field_items */
+          $field_items = $referencing_entity->get($field_name);
+          foreach ($field_items as $delta => $item) {
+            if (!empty($item->text) && $item->text === $label) {
+              $value = $field_items->set($delta, ['target_id' => $entity->id()])->getValue();
+              $referencing_entity->set($field_name, $value);
+              $referencing_entity->save();
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Gets text_or_entity field configs referencing an entity type and bundle.
+ *
+ * @param string $referenced_entity_type
+ *   The referenced entity type id.
+ * @param string $referenced_bundle
+ *   The referenced entity bundle.
+ *
+ * @return \Drupal\field\Entity\FieldConfig[]
+ *   An array of field config entities keyed by the field name.
+ */
+function text_or_entity_get_field_configs($referenced_entity_type, $referenced_bundle) {
+  $field_config_storage = \Drupal::entityTypeManager()->getStorage('field_config');
+  $field_config_ids = $field_config_storage
+    ->getQuery()
+    ->condition('field_type', 'text_or_entity_reference')
+    ->execute();
+  $return = [];
+  $field_configs = $field_config_storage->loadMultiple($field_config_ids);
+  if ($field_config_ids) {
+    $field_configs = $field_config_storage->loadMultiple($field_config_ids);
+    foreach ($field_configs as $field_config) {
+      $settings = $field_config->get('settings');
+      $field_referenced_entity_bundles = $settings['handler_settings']['target_bundles'];
+      if ($settings['handler'] === 'default:' . $referenced_entity_type && in_array($referenced_bundle, $field_referenced_entity_bundles)) {
+        $return[$field_config->get('field_name')] = $field_config;
+      }
+    }
+  }
+  return $return;
 }
