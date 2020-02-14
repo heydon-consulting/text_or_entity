@@ -170,6 +170,9 @@ function text_or_entity_get_field_configs($referenced_entity_type, $referenced_b
     $field_configs = $field_config_storage->loadMultiple($field_config_ids);
     foreach ($field_configs as $field_config) {
       $settings = $field_config->get('settings');
+      if (!isset($settings['handler_settings']['target_bundles'])) {
+        continue;
+      }
       $field_referenced_entity_bundles = $settings['handler_settings']['target_bundles'];
       if ($settings['handler'] === 'default:' . $referenced_entity_type && in_array($referenced_bundle, $field_referenced_entity_bundles)) {
         $return[$field_config->get('field_name')] = $field_config;
